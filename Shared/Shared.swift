@@ -208,11 +208,22 @@ enum Fmt {
         return f.string(from: d)
     }
 
+    /// "hace 5 min", "hace 3 h", "hace 2 d", "hace 3 sem", "hace 2 meses", "en 4 h"
     static func relative(_ d: Date, to now: Date = Date()) -> String {
-        let f = RelativeDateTimeFormatter()
-        f.locale = locale
-        f.unitsStyle = .short
-        if abs(d.timeIntervalSince(now)) < 30 { return "ahora" }
-        return f.localizedString(for: d, relativeTo: now)
+        let t = d.timeIntervalSince(now)
+        let a = abs(t)
+        if a < 45 { return "ahora" }
+        let s: String
+        switch a {
+        case ..<3600: s = "\(max(1, Int(a / 60))) min"
+        case ..<86400: s = "\(Int(a / 3600)) h"
+        case ..<(7 * 86400): s = "\(Int(a / 86400)) d"
+        case ..<(30 * 86400): s = "\(Int(a / (7 * 86400))) sem"
+        case ..<(365 * 86400):
+            let m = Int(a / (30 * 86400)); s = "\(m) \(m == 1 ? "mes" : "meses")"
+        default:
+            let y = Int(a / (365 * 86400)); s = "\(y) \(y == 1 ? "año" : "años")"
+        }
+        return t < 0 ? "hace \(s)" : "en \(s)"
     }
 }

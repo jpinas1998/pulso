@@ -48,7 +48,9 @@ final class Subprocess: @unchecked Sendable {
 
         let proc = Subprocess(pid: pid)
         let readFD = fds[0]
-        DispatchQueue.global(qos: .utility).async {
+        // Hilo propio (no el pool de GCD): con muchas ejecuciones en paralelo que esperan su resultado,
+        // el pool compartido podría quedarse sin hilos para leer la salida.
+        let reader = Thread {
             var pending = Data()
             var chunk = [UInt8](repeating: 0, count: 16 * 1024)
             while true {
@@ -68,6 +70,9 @@ final class Subprocess: @unchecked Sendable {
             proc.finished = true
             onExit(Self.exitCode(status))
         }
+        reader.qualityOfService = .utility
+        reader.stackSize = 256 * 1024
+        reader.start()
         return proc
     }
 

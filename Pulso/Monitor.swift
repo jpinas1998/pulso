@@ -48,6 +48,8 @@ final class Monitor: ObservableObject {
     @Published private(set) var lastActive: [String: Date] = [:]
 
     let cleanup = CleanupService()
+    let analyzer = DiskAnalyzer()
+    let worktrees = WorktreeService()
     let history = HistoryStore()
     let alerts = AlertService()
 
@@ -78,6 +80,17 @@ final class Monitor: ObservableObject {
         alerts.setUp()
 
         cleanup.onFinished = { [weak self] rec in self?.cleanupFinished(rec) }
+        analyzer.onDeleted = { [weak self] freed in
+            guard let self else { return }
+            self.disk = SystemSampler.disk()
+            self.toast = Toast(text: "Liberados \(Fmt.disk(freed))")
+            self.writeWidget(reload: true)
+        }
+        worktrees.onChanged = { [weak self] msg in
+            self?.toast = Toast(text: msg, isError: msg.hasPrefix("Errores"))
+            self?.disk = SystemSampler.disk()
+            self?.scanPorts(dockerMaxAge: 30, dockerStats: false)
+        }
         cleanup.onStuck = { [weak self] since in
             guard Prefs.bool(Prefs.Key.alertCleanup) else { return }
             self?.alerts.post(id: "stuck", title: "La medición del disco lleva 24 h aplazada",
@@ -384,6 +397,8 @@ final class Monitor: ObservableObject {
     }
 
     private func cleanupFinished(_ rec: RunRecord) {
+        // Aprovecha que el Mac está tranquilo para refrescar el análisis de disco (como mucho una vez al día).
+        if rec.kind == .measure, rec.status == .done, rec.trigger == .auto, analyzer.isStale { analyzer.analyze() }
         if rec.kind != .measure || rec.trigger == .manual {
             disk = SystemSampler.disk()
         }

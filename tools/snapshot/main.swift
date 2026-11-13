@@ -5,6 +5,7 @@ import SwiftUI
 
 let outDir = URL(fileURLWithPath: CommandLine.arguments[1])
 let measure = CommandLine.arguments.contains("--medir")
+let analyzeDisk = CommandLine.arguments.contains("--analizar")
 try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
 @MainActor
@@ -60,6 +61,15 @@ func run() async {
         while m.cleanup.running != nil { try? await Task.sleep(nanoseconds: 1_000_000_000) }
         print("Medición:", m.cleanup.state.runs.first?.detail ?? "-")
     }
+    if analyzeDisk {
+        print("Analizando el disco (unos 5 min)…")
+        m.analyzer.analyze()
+        while m.analyzer.running { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+        print("Análisis:", m.analyzer.report?.artifacts.count ?? 0, "artefactos")
+    }
+    m.worktrees.refresh()
+    while m.worktrees.loading { try? await Task.sleep(nanoseconds: 500_000_000) }
+    print("Worktrees:", m.worktrees.worktrees.count, "· candidatos:", m.worktrees.worktrees.filter(\.isCandidate).count)
     PanelView.unlimitedHeight = true
     // Unos segundos de muestras en vivo para la gráfica de CPU.
     let panel = { PanelChrome(content: PanelView().environmentObject(m).environmentObject(m.cleanup)) }
@@ -81,6 +91,10 @@ func run() async {
         m.simulateIdle(minutes: 125)
         UserDefaults.standard.set("processes", forKey: Prefs.Key.panelTab)
         render(panel(), width: 432, dark: dark, name: "9-procesos\(sfx)")
+        UserDefaults.standard.set("storage", forKey: Prefs.Key.panelTab)
+        render(panel(), width: 432, dark: dark, name: "10-espacio\(sfx)")
+        UserDefaults.standard.set("worktrees", forKey: Prefs.Key.panelTab)
+        render(panel(), width: 432, dark: dark, name: "11-worktrees\(sfx)")
         UserDefaults.standard.set("servers", forKey: Prefs.Key.panelTab)
         GroupCard.expandProjectsByDefault = false
         for (t, n) in [(Tile.cpu, "3-detalle-cpu"), (.memory, "4-detalle-memoria"), (.disk, "5-detalle-disco-limpieza")] {

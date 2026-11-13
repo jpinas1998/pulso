@@ -4,18 +4,22 @@ import SwiftUI
 enum Tile: String { case cpu, memory, disk }
 
 enum PanelTab: String, CaseIterable, Identifiable {
-    case servers, processes
+    case servers, processes, storage, worktrees
     var id: String { rawValue }
     var label: String {
         switch self {
         case .servers: "Servidores"
         case .processes: "Procesos"
+        case .storage: "Espacio"
+        case .worktrees: "Worktrees"
         }
     }
     var symbol: String {
         switch self {
         case .servers: "network"
         case .processes: "memorychip"
+        case .storage: "internaldrive"
+        case .worktrees: "arrow.triangle.branch"
         }
     }
 }
@@ -29,17 +33,15 @@ struct PanelTabs: View {
             ForEach(PanelTab.allCases) { t in
                 let on = selection == t.rawValue
                 Button { withAnimation(.snappy(duration: 0.2)) { selection = t.rawValue } } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: t.symbol).font(.system(size: 10, weight: .semibold))
-                        Text(t.label).font(.system(size: 12, weight: on ? .semibold : .regular))
+                    HStack(spacing: 4) {
+                        Image(systemName: t.symbol).font(.system(size: 9.5, weight: .semibold))
+                        Text(t.label).font(.system(size: 11.5, weight: on ? .semibold : .regular)).lineLimit(1).fixedSize()
                         if let n = badges[t], n > 0 {
-                            Text(verbatim: "\(n)").font(.system(size: 9, weight: .bold))
-                                .padding(.horizontal, 4).padding(.vertical, 1)
-                                .background(Capsule().fill(Severity.warn.color.opacity(0.25)))
-                                .foregroundStyle(Severity.warn.color)
+                            Circle().fill(Severity.warn.color).frame(width: 6, height: 6)
+                                .help("\(n) aviso\(n == 1 ? "" : "s")")
                         }
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .padding(.horizontal, 4).padding(.vertical, 6)
                     .frame(maxWidth: .infinity)
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Color.primary.opacity(0.09) : .clear))
                     .foregroundStyle(on ? Color.primary : Color.secondary)
@@ -79,6 +81,8 @@ struct PanelView: View {
                     switch PanelTab(rawValue: tab) ?? .servers {
                     case .servers: PortsSection()
                     case .processes: ProcessesSection()
+                    case .storage: StorageSection()
+                    case .worktrees: WorktreesSection()
                     }
                 }
                 .padding(.horizontal, 14)
@@ -92,6 +96,8 @@ struct PanelView: View {
             footer.padding(.horizontal, 14).padding(.vertical, 8)
         }
         .frame(width: 392)
+        .environmentObject(m.analyzer)
+        .environmentObject(m.worktrees)
         .overlay(alignment: .bottom) { toast }
         .onAppear { m.panelDidOpen() }
         .onDisappear { m.panelDidClose() }

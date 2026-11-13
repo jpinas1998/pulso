@@ -26,6 +26,8 @@ targets:
       - path: Shared
       - path: scripts/limpiar-mac.sh
         buildPhase: resources
+      - path: scripts/analizar-disco.sh
+        buildPhase: resources
     dependencies:
       - target: PulsoWidget
     info:
