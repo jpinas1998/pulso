@@ -145,7 +145,7 @@ struct PanelView: View {
                      selected: $selected)
             TileView(tile: .disk, title: "Disco", value: Fmt.disk(m.disk.available), fraction: m.disk.usedFraction,
                      severity: Severity.forDisk(free: m.disk.available, total: m.disk.total),
-                     caption: cleanup.state.measurement.map { "~\(Fmt.disk($0.total)) liberables" } ?? "libres",
+                     caption: cleanup.state.measurement.flatMap { $0.total >= 50_000_000 ? "~\(Fmt.disk($0.total)) liberables" : nil } ?? "libres",
                      selected: $selected)
         }
     }
@@ -185,7 +185,7 @@ struct PanelView: View {
                 .padding(.bottom, 44)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .task(id: t.id) {
-                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    try? await Task.sleep(nanoseconds: t.isError ? 6_000_000_000 : 2_500_000_000)
                     withAnimation { if m.toast?.id == t.id { m.toast = nil } }
                 }
         }

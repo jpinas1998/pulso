@@ -28,11 +28,23 @@ struct CleanupCard: View {
         HStack(alignment: .firstTextBaseline) {
             Text("Limpieza").font(.system(size: 13, weight: .semibold))
             Spacer()
-            if let m = cleanup.state.measurement {
+            if let m = cleanup.state.measurement, !m.isClean {
                 Text("medido \(Fmt.relative(m.date))").font(.caption2).foregroundStyle(.tertiary)
             }
         }
-        if let m = cleanup.state.measurement {
+        if let m = cleanup.state.measurement, m.isClean {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Severity.ok.color)
+                    Text("Limpio").font(.system(size: 20, weight: .semibold, design: .rounded))
+                    if let f = m.freed, f > 0 {
+                        Text("liberados ~\(Fmt.disk(f)) \(Fmt.relative(m.cleanedAt ?? m.date))").font(.callout).foregroundStyle(.secondary)
+                    }
+                }
+                Text("No queda nada que este script pueda borrar. Se volverá a medir cuando el Mac esté tranquilo; si quieres ver más espacio recuperable, mira la pestaña Espacio.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        } else if let m = cleanup.state.measurement {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("~\(Fmt.disk(m.total))").font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()

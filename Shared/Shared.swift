@@ -167,6 +167,7 @@ struct WidgetCleanup: Codable {
     var measuredAt: Date?
     var nextRun: Date?
     var status: String?
+    var cleanedAt: Date? = nil
 }
 
 // MARK: - Formato

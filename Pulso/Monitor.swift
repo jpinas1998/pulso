@@ -339,7 +339,7 @@ final class Monitor: ObservableObject {
     func canRestart(_ row: ProcRow, in group: ProcGroup) -> Bool {
         if row.isProtected || row.needsAdmin { return false }
         switch row.action {
-        case .dockerStop, .brewStop: return true
+        case .dockerStop, .brewStop, .launchdStop: return true
         case .kill: return group.kind != .system
         }
     }
@@ -349,6 +349,15 @@ final class Monitor: ObservableObject {
         switch row.action {
         case .brewStop(let f, _):
             brew("restart", f)
+        case .launchdStop(let label, _):
+            busyRows.insert(row.id)
+            Task {
+                let ok = await Self.background { Launchd.restart(label) }
+                busyRows.remove(row.id)
+                toast = ok ? Toast(text: "Reiniciado: \(row.title)") : Toast(text: "No se pudo reiniciar \(label)", isError: true)
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                scanPorts(dockerMaxAge: 30, dockerStats: false)
+            }
         case .dockerStop(let ids):
             busyRows.insert(row.id)
             Task {
@@ -519,6 +528,13 @@ final class Monitor: ObservableObject {
         Task { await run([row], label: row.ports.first.map { ":\($0.port)" } ?? row.title, groupId: group.id) }
     }
 
+    /// Cierra el proceso y también a su padre (el que lo relanza).
+    func closeWithParent(_ row: ProcRow, parent: pid_t, in group: ProcGroup) {
+        var r = row
+        r.action = .kill(pids: [parent])
+        Task { await run([r, row], label: "\(row.title) y lo que lo lanza", groupId: group.id) }
+    }
+
     func closeAll(_ group: ProcGroup) {
         Task { await run(group.closableRows, label: group.name, groupId: group.id) }
     }
@@ -532,6 +548,22 @@ final class Monitor: ObservableObject {
         toast = outcome.ok ? Toast(text: "Cerrado: \(label)") : Toast(text: outcome.message, isError: true)
         try? await Task.sleep(nanoseconds: 600_000_000)
         scanPorts(dockerMaxAge: 0, dockerStats: false) { [weak self] in self?.writeWidget(reload: true) }
+
+        // ¿Ha vuelto a levantarse? (algo lo está relanzando: un supervisor, un script en bucle…)
+        let ports = Set(rows.flatMap(\.ports).filter { $0.proto == .tcp }.map(\.port))
+        guard outcome.ok, !ports.isEmpty else { return }
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        let back = await Self.background { () -> (Int, pid_t)? in
+            for p in ProcessScanner().scan(includeUDP: false).values {
+                if let l = p.listeners.first(where: { ports.contains($0.port) }) { return (l.port, p.pid) }
+            }
+            return nil
+        }
+        if let (port, pid) = back {
+            let who = Launchd.serviceJobs()[pid].map { "launchd (\($0))" } ?? Launchd.parent(of: pid).map { $0.name }
+            toast = Toast(text: ":\(port) ha vuelto a levantarse\(who.map { ": lo relanza \($0)" } ?? ""). Usa «Cerrar también lo que lo lanza» en su menú ⋯.", isError: true)
+            scanPorts(dockerMaxAge: 0, dockerStats: false)
+        }
     }
 
     /// Acciones que llegan desde el widget (pulso://…).
@@ -673,8 +705,10 @@ final class Monitor: ObservableObject {
             diskFree: disk.available, diskTotal: disk.total,
             groups: shown.map { WidgetGroup(id: $0.id, name: $0.name, kind: $0.kind, ports: $0.ports.filter { $0.proto == .tcp }.map(\.port),
                                             ram: $0.ram, processCount: $0.processCount) },
-            cleanup: WidgetCleanup(reclaimable: cleanup.state.measurement?.total, measuredAt: cleanup.state.measurement?.date,
-                                   nextRun: cleanup.nextRunDate, status: status)
+            cleanup: WidgetCleanup(reclaimable: cleanup.state.measurement.flatMap { $0.isClean ? nil : $0.total },
+                                   measuredAt: cleanup.state.measurement?.date,
+                                   nextRun: cleanup.nextRunDate, status: status,
+                                   cleanedAt: cleanup.state.measurement.flatMap { $0.isClean ? $0.cleanedAt : nil })
         )
         return snap
     }

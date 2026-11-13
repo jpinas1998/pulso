@@ -252,7 +252,7 @@ struct LargeView: View {
         HStack(spacing: 7) {
             Image(systemName: "sparkles").font(.system(size: 11)).foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 0) {
-                Text(s.cleanup.reclaimable.map { "~\(Fmt.disk($0)) liberables" } ?? "Espacio sin medir")
+                Text(s.cleanup.reclaimable.map { "~\(Fmt.disk($0)) liberables" } ?? (s.cleanup.cleanedAt != nil ? "Limpio" : "Espacio sin medir"))
                     .font(.system(size: 10.5, weight: .semibold)).lineLimit(1)
                 Text(cleanupCaption).font(.system(size: 8.5)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.85)
             }
@@ -262,10 +262,12 @@ struct LargeView: View {
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(Capsule().fill(Color.primary.opacity(0.1)))
             }
+            if s.cleanup.cleanedAt == nil {
             Link(destination: URL(string: "pulso://clean")!) {
                 Text("Limpiar").font(.system(size: 9.5, weight: .semibold))
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(Capsule().fill(Color.accentColor.opacity(0.22)))
+            }
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
@@ -274,6 +276,7 @@ struct LargeView: View {
 
     private var cleanupCaption: String {
         if let st = s.cleanup.status { return st }
+        if let c = s.cleanup.cleanedAt { return "Limpiado \(Fmt.relative(c))" }
         if let n = s.cleanup.nextRun { return "Próxima medición \(Fmt.relative(n))" }
         if let m = s.cleanup.measuredAt { return "Medido \(Fmt.relative(m))" }
         return ""

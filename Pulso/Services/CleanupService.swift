@@ -13,6 +13,11 @@ struct Measurement: Codable {
     var date: Date
     var items: [CleanupItem]
     var skipped: [String]
+    /// Tras una limpieza la estimación se pone a cero al momento (hasta la siguiente medición real).
+    var cleanedAt: Date?
+    var freed: UInt64?
+
+    var isClean: Bool { cleanedAt != nil && total < 50_000_000 }
 
     /// Lo que libera la limpieza segura (sin volúmenes de Docker).
     var total: UInt64 { items.filter { $0.key != "docker_volumenes" }.reduce(0) { $0 + $1.bytes } }
@@ -329,6 +334,18 @@ final class CleanupService: ObservableObject {
             } else {
                 rec.bytes = freed
                 rec.detail = "Liberados ~\(Fmt.disk(freed ?? 0))"
+                // Lo que la limpieza acaba de borrar ya no se puede liberar: la estimación baja a cero
+                // ya mismo, sin esperar a la próxima medición (que puede aplazarse si el Mac está ocupado).
+                if var m = state.measurement {
+                    m.items = m.items.map { i in
+                        var i = i
+                        if i.key != "docker_volumenes" || job.kind == .cleanVolumes { i.bytes = 0 }
+                        return i
+                    }
+                    m.cleanedAt = now
+                    m.freed = freed
+                    state.measurement = m
+                }
                 if job.trigger == .idle { state.pendingClean = nil }
                 // Tras limpiar, se vuelve a medir pronto para actualizar la estimación.
                 state.nextMeasure = now.addingTimeInterval(retry)

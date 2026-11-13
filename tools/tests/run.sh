@@ -3,6 +3,7 @@
 #  1. Programador de limpieza: aplazar, reintentar, aviso de 24 h, ejecutar y cancelar por carga.
 #  2. Servidores: salud HTTP, reiniciar conservando el entorno, guardar perfil, cerrar y arrancar perfil
 #     (con un servidor de prueba en un proyecto falso, puerto 8799).
+#  4. Servicios que se relanzan: agente de launchd de prueba y bucle de bash (se limpian al acabar).
 #  3. Sistema: batería, energía por proceso y red por proceso (con --largo, también el aviso de
 #     proceso largo en una terminal simulada, que tarda ~75 s).
 set -euo pipefail
@@ -32,3 +33,8 @@ echo "== Sistema (batería, energía, red)"
 swiftc -O -swift-version 5 Shared/Shared.swift Pulso/Engine/*.swift Pulso/Services/SystemExtras.swift \
   tools/tests/system/main.swift -o build/test-system 2>/dev/null
 build/test-system "$@" || true
+
+echo "== Servicios que se relanzan (launchd con KeepAlive, bucles de shell)"
+swiftc -O -swift-version 5 Shared/Shared.swift Pulso/Engine/*.swift Pulso/Services/Actions.swift \
+  tools/tests/respawn/main.swift -o build/test-respawn 2>/dev/null
+build/test-respawn 2>/dev/null || true

@@ -21,6 +21,7 @@ enum RowAction: Equatable {
     case kill(pids: [pid_t])
     case dockerStop(ids: [String])
     case brewStop(formula: String, pids: [pid_t])
+    case launchdStop(label: String, pids: [pid_t])
 }
 
 struct ProcRow: Identifiable {
@@ -77,6 +78,7 @@ final class Grouper: @unchecked Sendable {
     private static let interpreters: Set<String> = ["python", "python3", "Python", "node", "ruby", "bun", "deno", "php", "perl", "java", "dart", "dartvm", "uv"]
 
     func build(procs: [pid_t: ProcInfo], containers: [DockerContainer], scanner: ProcessScanner) -> [ProcGroup] {
+        let launchdJobs = Launchd.serviceJobs()
         if Date().timeIntervalSince(gitRootsAge) > 3600 { gitRoots = [:]; gitRootsAge = Date() }
 
         var children: [pid_t: [pid_t]] = [:]
@@ -179,7 +181,17 @@ final class Grouper: @unchecked Sendable {
             row.ports = p.listeners.map(PortRef.init)
             row.needsAdmin = !p.isMine
             row.isProtected = protected.contains(p.pid)
-            if isHomebrew(p.path) {
+            let pidsInOrder = killOrder(family, procs)
+            if let label = launchdJobs[p.pid] {
+                if let formula = Launchd.brewFormula(label: label) {
+                    row.action = .brewStop(formula: formula, pids: pidsInOrder)
+                    row.detail = "brew services · \(formula)"
+                } else {
+                    row.action = .launchdStop(label: label, pids: pidsInOrder)
+                    row.detail = "launchd · \(label)"
+                }
+                if isHomebrew(p.path) { serviceRows.append(row) } else { systemRows.append(row) }
+            } else if isHomebrew(p.path) {
                 let pids = killOrder(family, procs)
                 if let formula = brewFormula(p.path), brewServiceInstalled(formula) {
                     row.action = .brewStop(formula: formula, pids: pids)
@@ -404,7 +416,9 @@ final class Grouper: @unchecked Sendable {
     }
 
     private func brewServiceInstalled(_ formula: String) -> Bool {
-        FileManager.default.fileExists(atPath: "\(home)/Library/LaunchAgents/homebrew.mxcl.\(formula).plist")
+        ["homebrew.mxcl.\(formula)", "sh.brew.\(formula)"].contains {
+            FileManager.default.fileExists(atPath: "\(home)/Library/LaunchAgents/\($0).plist")
+        }
     }
 
     /// Raíz git más cercana dentro de la carpeta personal (sin contar ~/Library ni carpetas ocultas).

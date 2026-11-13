@@ -523,6 +523,15 @@ struct RowView: View {
         }
         Divider()
         Button(closeHelp) { requestClose() }
+        if let parent = relauncher {
+            Button("Cerrar también lo que lo lanza (\(parent.name))") { m.closeWithParent(row, parent: parent.pid, in: group) }
+        }
+    }
+
+    /// Proceso padre que podría estar relanzándolo (no una shell, no launchd, no ya incluido en la fila).
+    private var relauncher: (pid: pid_t, name: String)? {
+        guard case .kill(let pids) = row.action, let pid = row.pid, let p = Launchd.parent(of: pid), !pids.contains(p.pid) else { return nil }
+        return Launchd.isRelauncher(p.pid, name: p.name) ? p : nil
     }
 
     private func copy(_ s: String, _ msg: String) {
@@ -537,7 +546,8 @@ struct RowView: View {
     private var closeHelp: String {
         switch row.action {
         case .dockerStop: "Parar contenedor"
-        case .brewStop(let f, _): "Parar servicio (brew services stop \(f))"
+        case .brewStop(let f, _): "Parar servicio (brew services stop \(f)): no se relanzará"
+        case .launchdStop(let l, _): "Parar servicio de launchd (\(l)): no se relanzará"
         case .kill: row.ports.isEmpty ? "Cerrar proceso" : "Cerrar y liberar el puerto"
         }
     }

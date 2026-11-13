@@ -21,9 +21,13 @@ enum ActionRunner {
                 guard let docker = ShellEnv.which("docker") else { failures.append("No encuentro el comando docker"); continue }
                 let r = await background { Subprocess.run(docker, ["stop"] + ids, timeout: 60, env: ShellEnv.userEnvironment) }
                 if r.code != 0 { failures.append("docker stop falló: \(r.output.suffix(200))") }
+            case .launchdStop(let label, let pids):
+                let ok = await background { Launchd.stop(label) }
+                if !ok { adminPids += await terminate(pids) }
             case .brewStop(let formula, let pids):
                 if let brew = ShellEnv.which("brew") {
                     let r = await background { Subprocess.run(brew, ["services", "stop", formula], timeout: 60, env: ShellEnv.userEnvironment) }
+                    Launchd.invalidate()
                     if r.code != 0 { adminPids += await terminate(pids) }
                 } else {
                     adminPids += await terminate(pids)
