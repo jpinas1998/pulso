@@ -1,13 +1,27 @@
 # Pulso
 
-Monitor del Mac para la barra de menús + widget de escritorio.
+Monitor del Mac para la barra de menús + widget de escritorio. Atajo global **⌥⌘P** para abrirlo.
 
-- **CPU, memoria y disco** en vivo (con el panel abierto) y con historial de 30 días.
-- **Servidores y puertos** agrupados por proyecto (raíz git), Docker Compose, servicios de Homebrew y
-  sistema, con la RAM y la CPU de cada uno. Se puede cerrar un proceso o un proyecto entero.
-- **Limpieza de disco** con `scripts/limpiar-mac.sh`: mide cuánto se liberaría cuando el Mac está
-  tranquilo, aplaza la medición si no lo está y guarda el historial de ejecuciones.
-- **Alertas**: disco bajo, presión de memoria, swap, CPU sostenida, servidores que se caen…
+**Métricas**
+- CPU, memoria (presión, comprimida, swap) y disco en vivo, con historial de 30 días (24 h / 7 días).
+- Batería: carga, salud, ciclos y consumo; energía (W) y red por app y por proyecto.
+
+**Servidores** (pestaña Servidores)
+- Puertos TCP/UDP agrupados por proyecto (raíz git), Docker Compose, servicios de Homebrew y sistema.
+- RAM, CPU, rama de git y cambios sin commitear de cada proyecto; salud HTTP y latencia de cada puerto.
+- Buscar un puerto, cerrar/reiniciar un proceso o un proyecto entero, abrirlo en iTerm/PyCharm/…, copiar comando.
+- Perfiles de arranque (capturados de un proyecto en marcha), servicios de Homebrew parados, Docker Desktop.
+
+**Procesos** — proyectos olvidados (sin CPU desde hace X), modo foco y lo que más consume (RAM, CPU, energía, red).
+
+**Espacio** — builds de Flutter, `.dart_tool`, `.venv`, `.next`, Pods, cachés de Gradle, iOS DeviceSupport, npx,
+pub-cache, versiones de fvm… con borrado de lo regenerable. Más el script `limpiar-mac.sh` (Docker, Homebrew,
+DerivedData), que mide cuánto liberaría cuando el Mac está tranquilo y aplaza la medición si no lo está.
+
+**Worktrees** — estado de cada worktree (rama, último commit, cambios, fusionada, tamaño) y limpieza de los ya fusionados.
+
+**Alertas** — disco bajo, presión de memoria, swap, CPU sostenida, servidor caído, proyectos sin usar,
+comandos largos de terminal que terminan, limpieza terminada o atascada.
 
 ## Compilar e instalar
 
@@ -26,11 +40,12 @@ Widget: clic derecho en el escritorio → «Editar widgets» → busca «Pulso»
 | Carpeta | Qué hay |
 |---|---|
 | `Pulso/Engine` | Lecturas del sistema (Mach/sysctl), escáner de procesos y sockets (libproc), Docker, agrupado |
-| `Pulso/Services` | Limpieza y programador, historial, alertas, cierre de procesos, ajustes |
+| `Pulso/Services` | Limpieza y programador, análisis de disco, worktrees, perfiles y reinicio, salud HTTP, batería/red, alertas, atajo |
 | `Pulso/UI` | Panel de la barra de menús y ventana de ajustes (SwiftUI) |
 | `PulsoWidget` | Widget de escritorio (WidgetKit) |
 | `Shared` | Modelo compartido entre app y widget (instantánea en el App Group) |
 | `scripts/limpiar-mac.sh` | Script de limpieza (`--medir` no borra nada; `--volumes` incluye volúmenes de Docker) |
+| `scripts/analizar-disco.sh` | Análisis de lo que ocupa espacio en desarrollo (no borra nada) |
 | `tools/snapshot` | Herramienta de desarrollo: renderiza el panel y el widget a PNG con datos reales |
 
 ## Consumo
@@ -41,13 +56,15 @@ No lanza `lsof` ni `top`: todo se lee directamente del kernel.
 
 ## Datos
 
-`~/Library/Application Support/Pulso/`: `historial.csv`, `limpieza.json` (programación y ejecuciones)
-y `ultima-limpieza.log`.
+`~/Library/Application Support/Pulso/`: `historial.csv`, `limpieza.json` (programación y ejecuciones),
+`analisis-disco.json`, `perfiles.json` y `ultima-limpieza.log`. Los logs de lo que lanza Pulso
+(reinicios y perfiles) van a `~/Library/Logs/Pulso/`.
 
 ## Pruebas y herramientas
 
 ```bash
-./tools/tests/run.sh                 # programador de limpieza: aplazar, reintentar, aviso de 24 h, ejecutar y cancelar por carga
+./tools/tests/run.sh                 # limpieza, servidores (reiniciar, perfiles, salud) y sistema (batería, energía, red)
+./tools/tests/run.sh --largo         # además, el aviso de comando largo en una terminal simulada (~75 s)
 ./tools/snapshot/run.sh <carpeta>    # capturas PNG del panel y del widget con datos reales (--medir lanza antes una medición)
 swift tools/icon/make-icon.swift     # regenera el icono de la app
 ```

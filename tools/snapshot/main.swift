@@ -94,6 +94,9 @@ func run() async {
         m.simulateIdle(minutes: 125)
         UserDefaults.standard.set("processes", forKey: Prefs.Key.panelTab)
         render(panel(), width: 432, dark: dark, name: "9-procesos\(sfx)")
+        ProcessesSection.initialMode = .energy
+        render(panel(), width: 432, dark: dark, name: "12-procesos-energia\(sfx)")
+        ProcessesSection.initialMode = .ram
         UserDefaults.standard.set("storage", forKey: Prefs.Key.panelTab)
         render(panel(), width: 432, dark: dark, name: "10-espacio\(sfx)")
         UserDefaults.standard.set("worktrees", forKey: Prefs.Key.panelTab)

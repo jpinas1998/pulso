@@ -199,6 +199,15 @@ enum Fmt {
         return "\(h / 24) d"
     }
 
+    static func watts(_ w: Double) -> String {
+        if w < 0.001 { return "0 mW" }
+        if w < 1 { return "\(Int((w * 1000).rounded())) mW" }
+        return (w < 10 ? String(format: "%.1f W", w) : String(format: "%.0f W", w)).replacingOccurrences(of: ".", with: ",")
+    }
+
+    /// Velocidad de red: "0 B/s", "12 KB/s", "1,4 MB/s"
+    static func rate(_ bps: Double) -> String { bps < 1 ? "0 B/s" : format(bps, base: 1000) + "/s" }
+
     static func pct(_ f: Double) -> String { "\(Int((f * 100).rounded()))%" }
 
     static func time(_ d: Date) -> String {

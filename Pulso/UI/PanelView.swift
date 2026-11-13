@@ -116,6 +116,14 @@ struct PanelView: View {
                 Text("En vivo").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if let b = m.battery {
+                HStack(spacing: 3) {
+                    Image(systemName: b.symbol).font(.system(size: 11))
+                    Text("\(b.percent)%").font(.caption).monospacedDigit()
+                }
+                .foregroundStyle(b.percent <= 20 && !b.onAC ? Severity.critical.color : .secondary)
+                .help("\(b.stateLabel)\(b.minutesRemaining.map { " · \(Fmt.duration(TimeInterval($0 * 60)))" } ?? "")")
+            }
             if let t = m.thermal.label {
                 Label(t, systemImage: "thermometer.high").font(.caption).foregroundStyle(Severity.warn.color)
             }

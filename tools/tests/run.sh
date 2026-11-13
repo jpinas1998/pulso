@@ -3,6 +3,8 @@
 #  1. Programador de limpieza: aplazar, reintentar, aviso de 24 h, ejecutar y cancelar por carga.
 #  2. Servidores: salud HTTP, reiniciar conservando el entorno, guardar perfil, cerrar y arrancar perfil
 #     (con un servidor de prueba en un proyecto falso, puerto 8799).
+#  3. Sistema: batería, energía por proceso y red por proceso (con --largo, también el aviso de
+#     proceso largo en una terminal simulada, que tarda ~75 s).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 mkdir -p build
@@ -25,3 +27,8 @@ swiftc "${FLAGS[@]}" "${SRC[@]}" tools/tests/servers/main.swift -o build/test-se
 PULSO_SUPPORT_DIR="$TMP" build/test-servers || true
 lsof -tnP -iTCP:8799 -sTCP:LISTEN | xargs kill 2>/dev/null || true
 rm -rf "$PROJ" "$TMP"
+
+echo "== Sistema (batería, energía, red)"
+swiftc -O -swift-version 5 Shared/Shared.swift Pulso/Engine/*.swift Pulso/Services/SystemExtras.swift \
+  tools/tests/system/main.swift -o build/test-system 2>/dev/null
+build/test-system "$@" || true

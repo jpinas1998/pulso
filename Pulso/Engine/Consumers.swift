@@ -16,6 +16,8 @@ struct Consumer: Identifiable {
     var kind: Kind
     var ram: UInt64 = 0
     var cpu: Double = 0
+    var power: Double = 0
+    var net: Double = 0          // bytes/s (subida + bajada), lo rellena el monitor
     var count = 0
     var pids: [pid_t] = []
     var isSystem = false
@@ -58,6 +60,7 @@ extension Grouper {
             }
             c.ram += ram
             c.cpu += p.cpu ?? 0
+            c.power += p.power ?? 0
             c.count += 1
             c.pids.append(p.pid)
             byKey[key] = c

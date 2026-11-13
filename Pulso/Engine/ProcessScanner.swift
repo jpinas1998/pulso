@@ -24,6 +24,7 @@ struct ProcInfo {
     var cwd: String?
     var footprint: UInt64?
     var cpu: Double?            // fracción de toda la máquina (0...1)
+    var power: Double?          // vatios (energía medida por el sistema en Apple Silicon)
     var listeners: [Listener] = []
 
     var isMine: Bool { uid == getuid() }
@@ -32,6 +33,7 @@ struct ProcInfo {
 final class ProcessScanner: @unchecked Sendable {
     private let myUID = getuid()
     private var lastCPU: [pid_t: (start: UInt64, ns: UInt64)] = [:]
+    private var lastEnergy: [pid_t: (start: UInt64, nj: UInt64)] = [:]
     private var lastScanNs: UInt64 = 0
     private var argsCache: [pid_t: (start: UInt64, args: [String])] = [:]
     private lazy var argBuffer = [UInt8](repeating: 0, count: Self.argmax)
@@ -46,6 +48,7 @@ final class ProcessScanner: @unchecked Sendable {
         let elapsed = lastScanNs > 0 ? Double(nowNs - lastScanNs) : 0
         let cores = Double(SystemSampler.coreCount)
         var newCPU: [pid_t: (start: UInt64, ns: UInt64)] = [:]
+        var newEnergy: [pid_t: (start: UInt64, nj: UInt64)] = [:]
         var out: [pid_t: ProcInfo] = [:]
 
         for pid in Self.allPids() where pid > 0 {
@@ -61,11 +64,15 @@ final class ProcessScanner: @unchecked Sendable {
 
             if bsd.pbi_uid == myUID {
                 p.cwd = Self.cwd(pid)
-                if let (footprint, cpuNs) = rusage(pid) {
+                if let (footprint, cpuNs, energy) = rusage(pid) {
                     p.footprint = footprint
                     newCPU[pid] = (bsd.pbi_start_tvsec, cpuNs)
+                    newEnergy[pid] = (bsd.pbi_start_tvsec, energy)
                     if elapsed > 0, let prev = lastCPU[pid], prev.start == bsd.pbi_start_tvsec, cpuNs >= prev.ns {
                         p.cpu = min(1, Double(cpuNs - prev.ns) / elapsed / cores)
+                    }
+                    if elapsed > 0, let prev = lastEnergy[pid], prev.start == bsd.pbi_start_tvsec, energy >= prev.nj {
+                        p.power = Double(energy - prev.nj) / elapsed      // nJ / ns = W
                     }
                 }
             }
@@ -73,6 +80,7 @@ final class ProcessScanner: @unchecked Sendable {
         }
 
         lastCPU = newCPU
+        lastEnergy = newEnergy
         lastScanNs = nowNs
         argsCache = argsCache.filter { out[$0.key]?.start == $0.value.start }
         return out
@@ -189,17 +197,18 @@ final class ProcessScanner: @unchecked Sendable {
         return s.isEmpty ? nil : s
     }
 
-    private func rusage(_ pid: pid_t) -> (UInt64, UInt64)? {
-        var ri = rusage_info_v4()
+    /// (memoria real, tiempo de CPU en ns, energía acumulada en nJ)
+    private func rusage(_ pid: pid_t) -> (UInt64, UInt64, UInt64)? {
+        var ri = rusage_info_v6()
         let r = withUnsafeMutablePointer(to: &ri) { p in
             p.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
-                proc_pid_rusage(pid, RUSAGE_INFO_V4, $0)
+                proc_pid_rusage(pid, RUSAGE_INFO_V6, $0)
             }
         }
         guard r == 0 else { return nil }
         // En Apple Silicon los tiempos vienen en unidades de mach_absolute_time.
         let ticks = ri.ri_user_time + ri.ri_system_time
-        return (ri.ri_phys_footprint, ticks * timebase.numer / timebase.denom)
+        return (ri.ri_phys_footprint, ticks * timebase.numer / timebase.denom, ri.ri_energy_nj)
     }
 
     private func listeners(pid: pid_t, includeUDP: Bool) -> [Listener] {

@@ -93,6 +93,8 @@ private struct AlertSettings: View {
     @AppStorage(Prefs.Key.alertServerDown) private var down = true
     @AppStorage(Prefs.Key.alertNewPort) private var newPort = false
     @AppStorage(Prefs.Key.alertIdleProjects) private var idleProjects = true
+    @AppStorage(Prefs.Key.alertLongTasks) private var longTasks = true
+    @AppStorage(Prefs.Key.longTaskMinutes) private var longTaskMinutes = 2
     @AppStorage(Prefs.Key.alertCleanup) private var cleanup = true
 
     var body: some View {
@@ -113,6 +115,10 @@ private struct AlertSettings: View {
                 Toggle("Un servidor se detiene (sin que lo cierres tú)", isOn: $down)
                 Toggle("Se abre un puerto nuevo", isOn: $newPort)
                 Toggle("Proyectos sin usar que ocupan más de 1 GB de RAM", isOn: $idleProjects)
+            }
+            Section("Terminal") {
+                Toggle("Avisar cuando termine un comando largo (build, tests…)", isOn: $longTasks)
+                if longTasks { Stepper("Si dura más de \(longTaskMinutes) min", value: $longTaskMinutes, in: 1...60) }
             }
             Section("Limpieza") {
                 Toggle("Limpieza terminada, errores y mediciones atascadas más de 24 h", isOn: $cleanup)

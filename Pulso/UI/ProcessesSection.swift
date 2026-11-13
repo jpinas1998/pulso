@@ -5,13 +5,15 @@ import SwiftUI
 struct ProcessesSection: View {
     @EnvironmentObject private var m: Monitor
     @AppStorage(Prefs.Key.idleProjectMinutes) private var idleMinutes = 60
-    @State private var byCPU = false
+    @State private var mode: ConsumerMode = ProcessesSection.initialMode
+    static var initialMode: ConsumerMode = .ram
     @State private var showAll = false
     @State private var confirmForgotten = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             forgottenCard
+            EnergyCard()
             consumersList
         }
     }
@@ -68,28 +70,27 @@ struct ProcessesSection: View {
     // MARK: Lo que más consume
 
     private var consumersList: some View {
-        let list = m.consumers.sorted { byCPU ? $0.cpu > $1.cpu : $0.ram > $1.ram }
+        let list = m.consumers.sorted { mode.value($0) > mode.value($1) }
         let shown = Array(list.prefix(showAll ? 40 : 10))
-        let maxValue = byCPU ? max(list.first?.cpu ?? 0.01, 0.01) : Double(max(m.memory.total, 1))
+        let maxValue = mode == .ram ? Double(max(m.memory.total, 1)) : max(list.first.map(mode.value) ?? 0, mode.minScale)
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Lo que más consume").font(.system(size: 13, weight: .semibold))
+                Text("Consumo").font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Picker("", selection: $byCPU) {
-                    Text("RAM").tag(false)
-                    Text("CPU").tag(true)
+                Picker("", selection: $mode) {
+                    ForEach(ConsumerMode.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
             }
             VStack(spacing: 0) {
                 ForEach(Array(shown.enumerated()), id: \.element.id) { i, c in
                     if i > 0 { Divider().opacity(0.5) }
-                    ConsumerRow(consumer: c, byCPU: byCPU, maxValue: maxValue)
+                    ConsumerRow(consumer: c, mode: mode, maxValue: maxValue)
                 }
             }
             .card(padding: 8)
             HStack {
-                Text("Procesos de tu usuario, agrupados por app y por proyecto. RAM real, como en el Monitor de Actividad.")
+                Text(mode.footnote)
                     .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 if list.count > 10 {
@@ -123,7 +124,7 @@ private struct ForgottenRow: View {
 private struct ConsumerRow: View {
     @EnvironmentObject private var m: Monitor
     var consumer: Consumer
-    var byCPU: Bool
+    var mode: ConsumerMode
     var maxValue: Double
     @State private var hover = false
     @State private var confirming = false
@@ -139,11 +140,11 @@ private struct ConsumerRow: View {
                             Text(verbatim: "×\(consumer.count)").font(.system(size: 9)).foregroundStyle(.tertiary)
                         }
                     }
-                    Bar(value: (byCPU ? consumer.cpu : Double(consumer.ram)) / maxValue, color: barColor, height: 3)
+                    Bar(value: mode.value(consumer) / maxValue, color: barColor, height: 3)
                 }
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text(byCPU ? Fmt.pct(consumer.cpu) : Fmt.mem(consumer.ram)).font(.system(size: 11, weight: .medium)).monospacedDigit()
-                    Text(byCPU ? Fmt.mem(consumer.ram) : "CPU \(Fmt.pct(consumer.cpu))").font(.system(size: 9.5)).foregroundStyle(.secondary).monospacedDigit()
+                    Text(mode.format(consumer)).font(.system(size: 11, weight: .medium)).monospacedDigit()
+                    Text(mode == .ram ? "CPU \(Fmt.pct(consumer.cpu))" : Fmt.mem(consumer.ram)).font(.system(size: 9.5)).foregroundStyle(.secondary).monospacedDigit()
                 }
                 .frame(width: 64, alignment: .trailing)
                 if consumer.isSystem || consumer.isProtected {
@@ -179,8 +180,12 @@ private struct ConsumerRow: View {
     }
 
     private var barColor: Color {
-        let f = byCPU ? consumer.cpu : Double(consumer.ram) / Double(max(m.memory.total, 1))
-        return f > (byCPU ? 0.5 : 0.25) ? Severity.warn.color : Palette.app
+        switch mode {
+        case .ram: return Double(consumer.ram) / Double(max(m.memory.total, 1)) > 0.25 ? Severity.warn.color : Palette.app
+        case .cpu: return consumer.cpu > 0.5 ? Severity.warn.color : Palette.app
+        case .energy: return consumer.power > 5 ? Severity.warn.color : Palette.wired
+        case .net: return Palette.cached
+        }
     }
 
     private var closeHelp: String {
@@ -197,5 +202,106 @@ private struct ConsumerRow: View {
         case .project: "¿Cerrar todo lo de \(consumer.name)?"
         case .process: "¿Cerrar \(consumer.count) proceso\(consumer.count == 1 ? "" : "s") de \(consumer.name)?"
         }
+    }
+}
+
+enum ConsumerMode: String, CaseIterable, Identifiable {
+    case ram, cpu, energy, net
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .ram: "RAM"
+        case .cpu: "CPU"
+        case .energy: "Energía"
+        case .net: "Red"
+        }
+    }
+
+    func value(_ c: Consumer) -> Double {
+        switch self {
+        case .ram: Double(c.ram)
+        case .cpu: c.cpu
+        case .energy: c.power
+        case .net: c.net
+        }
+    }
+
+    func format(_ c: Consumer) -> String {
+        switch self {
+        case .ram: Fmt.mem(c.ram)
+        case .cpu: Fmt.pct(c.cpu)
+        case .energy: Fmt.watts(c.power)
+        case .net: Fmt.rate(c.net)
+        }
+    }
+
+    var minScale: Double {
+        switch self {
+        case .ram: 1
+        case .cpu: 0.01
+        case .energy: 0.5
+        case .net: 10_000
+        }
+    }
+
+    var footnote: String {
+        switch self {
+        case .ram: "Procesos de tu usuario, agrupados por app y por proyecto. RAM real, como en el Monitor de Actividad."
+        case .cpu: "Uso de CPU sobre el total de la máquina, agrupado por app y por proyecto."
+        case .energy: "Potencia media que mide macOS para cada proceso (Apple Silicon). Lo que más gasta batería."
+        case .net: "Subida + bajada desde la lectura anterior (nettop). Se mide solo con esta pestaña abierta."
+        }
+    }
+}
+
+/// Batería, consumo total y red.
+private struct EnergyCard: View {
+    @EnvironmentObject private var m: Monitor
+
+    var body: some View {
+        if let b = m.battery {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: b.symbol).font(.system(size: 15)).foregroundStyle(b.percent <= 20 && !b.onAC ? Severity.critical.color : Severity.ok.color)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Batería \(b.percent)%").font(.system(size: 13, weight: .semibold))
+                        Text(subtitle(b)).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let w = b.watts {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text(Fmt.watts(w)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                            Text("consumo del Mac").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                HStack(spacing: 14) {
+                    if let h = b.health {
+                        stat("Salud", Fmt.pct(h), h < 0.8 ? Severity.warn.color : nil,
+                             help: "Capacidad máxima actual frente a la de fábrica. Apple recomienda cambiarla por debajo del 80 %.")
+                    }
+                    if let c = b.cycles { stat("Ciclos", "\(c)", nil, help: "Ciclos de carga completos") }
+                    stat("Red", Fmt.rate(m.netTotal), nil, help: "Tráfico total de tus procesos ahora mismo")
+                }
+            }
+            .card()
+        }
+    }
+
+    private func subtitle(_ b: BatteryInfo) -> String {
+        var s = b.stateLabel
+        if let mins = b.minutesRemaining {
+            s += b.charging ? " · llena en \(Fmt.duration(TimeInterval(mins * 60)))" : " · quedan \(Fmt.duration(TimeInterval(mins * 60)))"
+        }
+        return s
+    }
+
+    private func stat(_ t: String, _ v: String, _ c: Color?, help: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(t).font(.caption2).foregroundStyle(.secondary)
+            Text(v).font(.system(size: 12, weight: .semibold)).monospacedDigit().foregroundStyle(c ?? .primary)
+        }
+        .help(help)
     }
 }

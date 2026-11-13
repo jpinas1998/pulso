@@ -54,6 +54,10 @@ final class Monitor: ObservableObject {
     let health = HealthChecker()
     let git = GitBriefs()
     @Published var brewServices: [BrewService] = []
+    @Published var battery: BatteryInfo?
+    @Published var netTotal: Double = 0
+    private let net = NetMonitor()
+    private let longTasks = LongTaskWatcher()
     private var lastBrewCheck = Date.distantPast
     let history = HistoryStore()
     let alerts = AlertService()
@@ -126,6 +130,7 @@ final class Monitor: ObservableObject {
         pulsoLog.info("Panel abierto")
         panelOpen = true
         liveTicks = SystemSampler.cpuTicks()
+        battery = BatteryInfo.read()
         liveTick()
         scheduleLiveTimer()
     }
@@ -157,6 +162,7 @@ final class Monitor: ObservableObject {
         load = SystemSampler.loadAverage()
         thermal = ProcessInfo.processInfo.thermalState
         live.append(LivePoint(t: Date(), cpu: cpu.total))
+        if liveCount % 5 == 0 { battery = BatteryInfo.read() }
         if live.count > 150 { live.removeFirst(live.count - 150) }
         if liveCount % 5 == 0 { disk = SystemSampler.disk() }
         if liveCount % 2 == 0 { scanPorts(dockerMaxAge: 5, dockerStats: true) }
@@ -180,6 +186,8 @@ final class Monitor: ObservableObject {
         if !panelOpen { memory = mem }
 
         cleanup.tick(idleConditions(now: now, ticks: ticks, mem: mem, minuteCPU: minuteCPU))
+        battery = BatteryInfo.read()
+        checkLongTasks()
         updateGuardTimer()
         minuteAlerts()
 
@@ -245,16 +253,24 @@ final class Monitor: ObservableObject {
         guard !scanning else { then?(); return }
         scanning = true
         let udp = Prefs.bool(Prefs.Key.showUDP)
-        scanQueue.async { [scanner, grouper, docker] in
+        let wantNet = panelOpen && Prefs.string(Prefs.Key.panelTab) == "processes"
+        scanQueue.async { [scanner, grouper, docker, net] in
             let procs = scanner.scan(includeUDP: udp)
             let containers = docker.current(maxAge: dockerMaxAge, wantStats: dockerStats)
             let groups = grouper.build(procs: procs, containers: containers, scanner: scanner)
-            let consumers = grouper.consumers(procs: procs, scanner: scanner)
+            var consumers = grouper.consumers(procs: procs, scanner: scanner)
+            var netTotal: Double = 0
+            if wantNet {
+                let rates = net.sample()
+                netTotal = rates.values.reduce(0, +)
+                consumers = consumers.map { c in var c = c; c.net = c.pids.reduce(0) { $0 + (rates[$1] ?? 0) }; return c }
+            }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.scanning = false
                 self.groups = groups
                 self.consumers = consumers
+                if wantNet { self.netTotal = netTotal }
                 self.trackActivity(groups)
                 if self.panelOpen { self.refreshPanelExtras(groups) }
                 self.portAlerts(groups)
@@ -267,6 +283,19 @@ final class Monitor: ObservableObject {
         disk = SystemSampler.disk()
         memory = SystemSampler.memory()
         scanPorts(dockerMaxAge: 0, dockerStats: true) { [weak self] in self?.writeWidget(reload: true) }
+    }
+
+    // MARK: - Procesos largos
+
+    private func checkLongTasks() {
+        guard Prefs.bool(Prefs.Key.alertLongTasks) else { return }
+        let servers = Set(groups.flatMap(\.rows).filter { !$0.ports.isEmpty }.compactMap(\.pid))
+        let minutes = max(1, Prefs.int(Prefs.Key.longTaskMinutes))
+        for t in longTasks.tick(minMinutes: minutes, servers: servers) {
+            let mins = Int(Date().timeIntervalSince1970 - Double(t.start)) / 60
+            alerts.post(id: "task-\(t.pid)-\(t.start)", title: "Ha terminado: \(t.title)",
+                        body: "Duró unos \(max(1, mins)) min\(t.project.map { " · \($0)" } ?? "").", cooldown: 0)
+        }
     }
 
     // MARK: - Extras del panel (solo con el panel abierto)

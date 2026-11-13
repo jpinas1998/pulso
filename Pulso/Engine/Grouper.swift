@@ -101,7 +101,9 @@ final class Grouper: @unchecked Sendable {
         for p in procs.values where p.isMine && p.pid > 1 && !protected.contains(p.pid) {
             guard !Self.notMembers.contains(p.name), !isInteractiveShell(p, scanner), !isAppBundle(p.path) else { continue }
             guard origin(of: p, procs, scanner) == .user else { continue }
-            let exeRoot = gitRoot(forDir: (p.path as NSString).deletingLastPathComponent)
+            var exeRoot = gitRoot(forDir: (p.path as NSString).deletingLastPathComponent)
+            // Los SDK instalados como repos git (Flutter con fvm, etc.) no son proyectos tuyos.
+            if let r = exeRoot?.lowercased(), r.contains("/fvm/") || r.contains("/flutter") || r.contains("sdk") { exeRoot = nil }
             // Demonios globales lanzados desde un proyecto pero que no son suyos (p. ej. adb, del SDK de
             // Android en ~/Library): su padre es launchd y su ejecutable vive fuera del proyecto, en ~/Library.
             if let root = gitRoot(forDir: p.cwd) {
