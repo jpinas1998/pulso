@@ -90,10 +90,15 @@ struct PortChip: View {
     var port: PortRef
     var tint: Color
     var small = false
+    var health: PortHealth? = nil
     @State private var hover = false
 
     var body: some View {
         HStack(spacing: 2) {
+            if let health {
+                Circle().fill(health.severity.color).frame(width: small ? 5 : 6, height: small ? 5 : 6)
+                    .padding(.trailing, 1)
+            }
             if port.exposed {
                 Image(systemName: "globe").font(.system(size: small ? 7.5 : 8.5, weight: .semibold))
                     .help("Escucha en todas las interfaces: accesible desde otros equipos de la red")
@@ -110,7 +115,7 @@ struct PortChip: View {
             guard port.isLikelyHTTP, let url = URL(string: "http://localhost:\(port.port)") else { return }
             NSWorkspace.shared.open(url)
         }
-        .help(port.isLikelyHTTP ? "Abrir http://localhost:\(port.port)" : "Puerto \(port.proto.rawValue) \(port.port)")
+        .help((health.map { $0.label + " · " } ?? "") + (port.isLikelyHTTP ? "Abrir http://localhost:\(port.port)" : "Puerto \(port.proto.rawValue) \(port.port)"))
     }
 }
 

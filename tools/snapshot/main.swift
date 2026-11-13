@@ -70,6 +70,9 @@ func run() async {
     m.worktrees.refresh()
     while m.worktrees.loading { try? await Task.sleep(nanoseconds: 500_000_000) }
     print("Worktrees:", m.worktrees.worktrees.count, "· candidatos:", m.worktrees.worktrees.filter(\.isCandidate).count)
+    if CommandLine.arguments.contains("--perfil-demo"), let g = m.groups.first(where: { $0.name == "wt-next" }) {
+        m.saveProfile(from: g)          // (con PULSO_SUPPORT_DIR temporal: no toca los perfiles reales)
+    }
     PanelView.unlimitedHeight = true
     // Unos segundos de muestras en vivo para la gráfica de CPU.
     let panel = { PanelChrome(content: PanelView().environmentObject(m).environmentObject(m.cleanup)) }

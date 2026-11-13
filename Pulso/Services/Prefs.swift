@@ -9,6 +9,7 @@ enum Prefs {
         static let showUDP = "showUDP"
         static let hotKey = "hotKey"
         static let panelTab = "panelTab"
+        static let healthChecks = "healthChecks"
         static let idleProjectMinutes = "idleProjectMinutes"
         static let alertIdleProjects = "alertIdleProjects"
 
@@ -37,6 +38,7 @@ enum Prefs {
             Key.showUDP: false,
             Key.hotKey: "opt-cmd-p",
             Key.panelTab: "servers",
+            Key.healthChecks: true,
             Key.idleProjectMinutes: 60,
             Key.alertIdleProjects: true,
             Key.alertDisk: true, Key.alertDiskGB: 15,

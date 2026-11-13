@@ -98,6 +98,9 @@ struct PanelView: View {
         .frame(width: 392)
         .environmentObject(m.analyzer)
         .environmentObject(m.worktrees)
+        .environmentObject(m.health)
+        .environmentObject(m.git)
+        .environmentObject(m.profiles)
         .overlay(alignment: .bottom) { toast }
         .onAppear { m.panelDidOpen() }
         .onDisappear { m.panelDidClose() }

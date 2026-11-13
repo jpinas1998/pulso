@@ -3,8 +3,10 @@ import SwiftUI
 
 struct PortsSection: View {
     @EnvironmentObject private var m: Monitor
+    @EnvironmentObject private var profiles: ProfileStore
     @AppStorage(Prefs.Key.showUDP) private var showUDP = false
     @State private var query = PortsSection.initialQuery
+    @State private var showAllServices = false
     @FocusState private var searchFocused: Bool
 
     static var initialQuery = ""
@@ -30,6 +32,8 @@ struct PortsSection: View {
 
             searchField
 
+            if query.isEmpty && !profiles.profiles.isEmpty { profilesStrip }
+
             let groups = filtered
             if m.groups.isEmpty {
                 emptyCard("No hay ningún servidor escuchando.")
@@ -42,7 +46,105 @@ struct PortsSection: View {
             } else {
                 ForEach(groups) { g in GroupCard(group: g, forceExpanded: !query.isEmpty) }
             }
+
+            if query.isEmpty {
+                if !m.stoppedBrewServices.isEmpty { stoppedServices }
+                if DockerDesktop.appURL != nil { dockerCard }
+            }
         }
+    }
+
+    // MARK: Perfiles de arranque
+
+    private var profilesStrip: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Arrancar").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            FlowLayout(spacing: 5) {
+                ForEach(profiles.profiles) { p in
+                    let running = m.isRunning(p)
+                    Button { if !running { m.start(p) } } label: {
+                        HStack(spacing: 4) {
+                            if profiles.starting.contains(p.id) { ProgressView().controlSize(.mini) }
+                            else { Image(systemName: running ? "circle.fill" : "play.fill").font(.system(size: running ? 6 : 8)) }
+                            Text(p.name).font(.system(size: 11, weight: .medium))
+                        }
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(Capsule().fill(running ? Severity.ok.color.opacity(0.15) : Palette.card))
+                        .foregroundStyle(running ? Severity.ok.color : .primary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(running ? "\(p.name) ya está en marcha" : "Arrancar \(p.name): " + p.steps.map(\.summary).joined(separator: " · "))
+                }
+            }
+        }
+    }
+
+    // MARK: Homebrew y Docker
+
+    private static let usualServices = ["postgresql", "mysql", "mariadb", "redis", "valkey", "rabbitmq", "mongodb", "memcached",
+                                        "minio", "elasticsearch", "opensearch", "kafka", "nats-server", "mailpit", "mailhog", "nginx", "caddy", "temporal"]
+
+    /// Primero los que se usaron alguna vez (parados o con error); después bases de datos y colas habituales.
+    private var rankedStopped: [BrewService] {
+        func rank(_ s: BrewService) -> Int {
+            if s.status == "error" || s.status == "stopped" { return 0 }
+            return Self.usualServices.contains { s.name.hasPrefix($0) } ? 1 : 2
+        }
+        return m.stoppedBrewServices.sorted { (rank($0), $0.name) < (rank($1), $1.name) }
+    }
+
+    private var stoppedServices: some View {
+        let all = rankedStopped
+        let main = all.filter { s in s.status == "error" || s.status == "stopped" || Self.usualServices.contains { s.name.hasPrefix($0) } }
+        let shown = showAllServices ? all : Array(main.prefix(6))
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Servicios de Homebrew parados", systemImage: "cylinder.split.1x2")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                if all.count > shown.count || showAllServices {
+                    Button(showAllServices ? "Ver menos" : "Ver todos (\(all.count))") { showAllServices.toggle() }
+                        .buttonStyle(.link).font(.caption)
+                }
+            }
+            FlowLayout(spacing: 5) {
+                ForEach(shown) { s in
+                    Button { m.brew("start", s.name) } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "play.fill").font(.system(size: 8))
+                            Text(s.name).font(.system(size: 11, weight: .medium))
+                        }
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(Capsule().fill(GroupKind.services.tint.opacity(0.12)))
+                        .foregroundStyle(GroupKind.services.tint)
+                    }
+                    .buttonStyle(.plain)
+                    .help("brew services start \(s.name)\(s.status == "error" ? " (terminó con error)" : "")")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+
+    private var dockerCard: some View {
+        let on = m.dockerDesktopRunning
+        return HStack(spacing: 8) {
+            Image(systemName: GroupKind.docker.symbol).font(.system(size: 12)).foregroundStyle(GroupKind.docker.tint)
+                .frame(width: 22, height: 22).background(RoundedRectangle(cornerRadius: 6).fill(GroupKind.docker.tint.opacity(0.14)))
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Docker Desktop").font(.system(size: 12.5, weight: .semibold))
+                Text(on ? "En marcha" : "Parado").font(.caption2).foregroundStyle(on ? Severity.ok.color : .secondary)
+            }
+            Spacer()
+            Button(on ? "Parar" : "Arrancar") {
+                if on { DockerDesktop.quit() } else { DockerDesktop.start() }
+                m.toast = Toast(text: on ? "Parando Docker Desktop…" : "Arrancando Docker Desktop…")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 8) { m.scanPorts(dockerMaxAge: 0, dockerStats: false) }
+            }
+            .controlSize(.small)
+        }
+        .card()
     }
 
     private var searchField: some View {
@@ -158,6 +260,8 @@ struct MoreMenu<Content: View>: View {
 
 struct GroupCard: View {
     @EnvironmentObject private var m: Monitor
+    @EnvironmentObject private var git: GitBriefs
+    @EnvironmentObject private var health: HealthChecker
     var group: ProcGroup
     var forceExpanded = false
     @State private var expanded: Bool
@@ -190,7 +294,7 @@ struct GroupCard: View {
                 .transition(.opacity)
             } else if !group.ports.isEmpty {
                 FlowLayout(spacing: 4) {
-                    ForEach(group.ports.prefix(10)) { PortChip(port: $0, tint: group.kind.tint) }
+                    ForEach(group.ports.prefix(10)) { PortChip(port: $0, tint: group.kind.tint, health: $0.proto == .tcp ? health.results[$0.port] : nil) }
                     if group.ports.count > 10 {
                         Text("+\(group.ports.count - 10)").font(.caption2).foregroundStyle(.secondary).padding(.top, 2)
                     }
@@ -228,6 +332,18 @@ struct GroupCard: View {
                 if let s = group.subtitle, !s.isEmpty {
                     Text(s).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
                 }
+                if let path = group.path, let g = git.info[path] {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.branch").font(.system(size: 8))
+                        Text(g.branch).font(.system(size: 9.5, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                        if g.changes > 0 {
+                            Text("\(g.changes) cambio\(g.changes == 1 ? "" : "s")").font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Severity.warn.color)
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                    .help("Rama actual\(g.changes > 0 ? " · \(g.changes) archivo\(g.changes == 1 ? "" : "s") sin commitear" : "")")
+                }
             }
             Spacer(minLength: 4)
             VStack(alignment: .trailing, spacing: 0) {
@@ -255,6 +371,15 @@ struct GroupCard: View {
     @ViewBuilder
     private var groupActions: some View {
         if let path = group.path { OpenInMenuItems(path: path) }
+        if group.kind == .project {
+            Divider()
+            Button("Guardar como perfil de arranque") { m.saveProfile(from: group) }
+        }
+        if group.kind == .docker, group.name != "Docker" {
+            Divider()
+            Button("docker compose restart") { m.compose(["restart"], project: group.name) }
+            Button("docker compose down") { m.compose(["down"], project: group.name) }
+        }
         if group.kind == .project || group.kind == .docker, !m.focusTargets(for: group).isEmpty {
             Divider()
             Button("Modo foco: cerrar los demás proyectos…") { confirmingFocus = true }
@@ -310,6 +435,7 @@ struct GroupCard: View {
 
 struct RowView: View {
     @EnvironmentObject private var m: Monitor
+    @EnvironmentObject private var health: HealthChecker
     var row: ProcRow
     var group: ProcGroup
     @State private var hover = false
@@ -331,7 +457,11 @@ struct RowView: View {
                     }
                     if !row.ports.isEmpty {
                         FlowLayout(spacing: 3) {
-                            ForEach(row.ports) { PortChip(port: $0, tint: group.kind.tint, small: true) }
+                            ForEach(row.ports) { PortChip(port: $0, tint: group.kind.tint, small: true,
+                                                          health: $0.proto == .tcp ? health.results[$0.port] : nil) }
+                            if let h = row.ports.compactMap({ health.results[$0.port] }).first, h.status != nil {
+                                Text("\(h.latencyMs) ms").font(.system(size: 9.5)).foregroundStyle(.tertiary).padding(.top, 2)
+                            }
                         }
                     }
                 }
@@ -373,6 +503,14 @@ struct RowView: View {
             }
             Divider()
         }
+        if m.canRestart(row, in: group) {
+            Button("Reiniciar") { m.restart(row, in: group) }
+        }
+        let log = Launch.logURL("\(group.name)-\(row.title)")
+        if FileManager.default.fileExists(atPath: log.path) {
+            Button("Ver log") { NSWorkspace.shared.open(log) }
+        }
+        Divider()
         Button("Copiar comando") { copy(row.args.isEmpty ? row.detail : shellQuoted(row.args), "Comando copiado") }
         if let pid = row.pid { Button("Copiar PID (\(String(pid)))") { copy(String(pid), "PID copiado") } }
         if !row.ports.isEmpty {

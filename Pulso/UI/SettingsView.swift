@@ -7,6 +7,7 @@ struct SettingsView: View {
             GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
             AlertSettings().tabItem { Label("Alertas", systemImage: "bell.badge") }
             CleanupSettings().tabItem { Label("Limpieza", systemImage: "sparkles") }
+            ProfilesSettings().tabItem { Label("Perfiles", systemImage: "play.square.stack") }
         }
         .frame(width: 500)
         .padding(.vertical, 8)
@@ -21,6 +22,7 @@ private struct GeneralSettings: View {
     @AppStorage(Prefs.Key.showUDP) private var showUDP = false
     @AppStorage(Prefs.Key.hotKey) private var hotKey = "opt-cmd-p"
     @AppStorage(Prefs.Key.idleProjectMinutes) private var idleMinutes = 60
+    @AppStorage(Prefs.Key.healthChecks) private var healthChecks = true
     @State private var hotKeyFailed = false
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
@@ -59,6 +61,7 @@ private struct GeneralSettings: View {
                     .onChange(of: liveInterval) { _, _ in m.scheduleLiveTimer() }
                 Stepper("Panel cerrado: lectura completa cada \(backgroundMinutes) min", value: $backgroundMinutes, in: 1...30)
                 Toggle("Mostrar puertos UDP", isOn: $showUDP)
+                Toggle("Comprobar si los servidores responden (HTTP, una vez por minuto con el panel abierto)", isOn: $healthChecks)
                 Stepper("Proyecto «sin usar» tras \(Fmt.duration(TimeInterval(idleMinutes * 60))) sin CPU", value: $idleMinutes, in: 15...480, step: 15)
             } header: {
                 Text("Refresco")
@@ -157,5 +160,82 @@ private struct CleanupSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+private struct ProfilesSettings: View {
+    @EnvironmentObject private var m: Monitor
+    @EnvironmentObject private var store: ProfileStore
+    @State private var newCommand: [UUID: String] = [:]
+
+    var body: some View {
+        Form {
+            if store.profiles.isEmpty {
+                Section {
+                    Text("Aún no tienes perfiles. Con un proyecto en marcha, abre su menú ⋯ en Pulso y elige «Guardar como perfil de arranque»: se guardan los comandos tal y como están corriendo.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            ForEach($store.profiles) { $p in
+                Section {
+                    TextField("Nombre", text: $p.name)
+                    Text(p.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).font(.caption).foregroundStyle(.secondary)
+                    ForEach(p.steps) { step in
+                        HStack(alignment: .top) {
+                            Image(systemName: icon(step.kind)).foregroundStyle(.secondary).frame(width: 16)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(step.title).font(.callout)
+                                Text(step.summary).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                                    .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                            }
+                            Spacer()
+                            Button { p.steps.removeAll { $0.id == step.id } } label: { Image(systemName: "minus.circle") }
+                                .buttonStyle(.borderless)
+                        }
+                    }
+                    HStack {
+                        TextField("Añadir comando (p. ej. npm run dev)", text: Binding(get: { newCommand[p.id] ?? "" }, set: { newCommand[p.id] = $0 }))
+                            .onSubmit { addCommand(&p) }
+                        Button("Añadir") { addCommand(&p) }.disabled((newCommand[p.id] ?? "").isEmpty)
+                    }
+                    HStack {
+                        Menu("Añadir servicio de Homebrew") {
+                            ForEach(m.brewServices) { s in
+                                Button(s.name) { p.steps.insert(LaunchStep(kind: .brewService, title: s.name, service: s.name), at: 0) }
+                            }
+                        }
+                        .fixedSize()
+                        Button("Añadir docker compose up") { p.steps.insert(LaunchStep(kind: .composeUp, title: "Docker Compose", cwd: p.path), at: 0) }
+                        Spacer()
+                        Button("Arrancar") { m.start(p) }
+                        Button(role: .destructive) { store.profiles.removeAll { $0.id == p.id } } label: { Text("Borrar perfil") }
+                    }
+                } header: {
+                    Text(p.name)
+                }
+            }
+            Section {
+                Text("Los comandos se lanzan en segundo plano en su carpeta, con las variables de entorno que tenían al guardarlos (sin secretos: esos se cargan de tu .env). La salida queda en ~/Library/Logs/Pulso.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Abrir carpeta de logs") { NSWorkspace.shared.open(Launch.logsDir) }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(minHeight: 380)
+    }
+
+    private func icon(_ k: LaunchStep.Kind) -> String {
+        switch k {
+        case .command: "terminal"
+        case .brewService: "cylinder.split.1x2"
+        case .composeUp: "shippingbox"
+        }
+    }
+
+    private func addCommand(_ p: inout LaunchProfile) {
+        let cmd = (newCommand[p.id] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !cmd.isEmpty else { return }
+        p.steps.append(LaunchStep(kind: .command, title: cmd, cwd: p.path, args: ["/bin/zsh", "-lc", cmd]))
+        newCommand[p.id] = ""
     }
 }

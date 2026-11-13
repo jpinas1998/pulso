@@ -23,6 +23,7 @@ struct PulsoApp: App {
             SettingsView()
                 .environmentObject(monitor)
                 .environmentObject(monitor.cleanup)
+                .environmentObject(monitor.profiles)
         }
     }
 }
@@ -106,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let host = NSHostingController(rootView: SettingsView()
                 .environmentObject(Monitor.shared)
                 .environmentObject(Monitor.shared.cleanup)
+                .environmentObject(Monitor.shared.profiles)
                 .onAppear { pulsoLog.info("Ajustes abiertos") })
             let w = NSWindow(contentViewController: host)
             w.title = "Ajustes de Pulso"

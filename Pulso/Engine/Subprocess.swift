@@ -28,8 +28,18 @@ final class Subprocess: @unchecked Sendable {
         var attr: posix_spawnattr_t?
         posix_spawnattr_init(&attr)
         defer { posix_spawnattr_destroy(&attr) }
-        posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT))
+        // Los hilos de GCD tienen las señales bloqueadas y el hijo heredaría esa máscara: con SIGTERM bloqueado
+        // no se podría cerrar por las buenas. Se lanza con máscara vacía y todas las señales por defecto.
+        posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF))
         posix_spawnattr_setpgroup(&attr, 0)
+        var noSignals = sigset_t()
+        sigemptyset(&noSignals)
+        posix_spawnattr_setsigmask(&attr, &noSignals)
+        var allSignals = sigset_t()
+        sigfillset(&allSignals)
+        sigdelset(&allSignals, SIGKILL)
+        sigdelset(&allSignals, SIGSTOP)
+        posix_spawnattr_setsigdefault(&attr, &allSignals)
 
         let argv = ([path] + args).map { strdup($0) } + [nil]
         let envp = env.map { strdup("\($0.key)=\($0.value)") } + [nil]

@@ -50,6 +50,11 @@ final class Monitor: ObservableObject {
     let cleanup = CleanupService()
     let analyzer = DiskAnalyzer()
     let worktrees = WorktreeService()
+    let profiles = ProfileStore()
+    let health = HealthChecker()
+    let git = GitBriefs()
+    @Published var brewServices: [BrewService] = []
+    private var lastBrewCheck = Date.distantPast
     let history = HistoryStore()
     let alerts = AlertService()
 
@@ -251,6 +256,7 @@ final class Monitor: ObservableObject {
                 self.groups = groups
                 self.consumers = consumers
                 self.trackActivity(groups)
+                if self.panelOpen { self.refreshPanelExtras(groups) }
                 self.portAlerts(groups)
                 then?()
             }
@@ -261,6 +267,145 @@ final class Monitor: ObservableObject {
         disk = SystemSampler.disk()
         memory = SystemSampler.memory()
         scanPorts(dockerMaxAge: 0, dockerStats: true) { [weak self] in self?.writeWidget(reload: true) }
+    }
+
+    // MARK: - Extras del panel (solo con el panel abierto)
+
+    private func refreshPanelExtras(_ groups: [ProcGroup]) {
+        let httpPorts = groups.filter { $0.kind != .system }.flatMap(\.ports).filter(\.isLikelyHTTP).map(\.port)
+        health.checkIfDue(httpPorts)
+        git.refresh(paths: groups.filter { $0.kind == .project }.compactMap(\.path))
+        if Date().timeIntervalSince(lastBrewCheck) > 60 {
+            lastBrewCheck = Date()
+            DispatchQueue.global(qos: .utility).async {
+                let list = BrewServices.list()
+                DispatchQueue.main.async { [weak self] in self?.brewServices = list }
+            }
+        }
+    }
+
+    var stoppedBrewServices: [BrewService] {
+        let running = Set(groups.flatMap(\.rows).compactMap { r -> String? in
+            if case .brewStop(let f, _) = r.action { return f }
+            return nil
+        })
+        return brewServices.filter { !$0.isRunning && !running.contains($0.name) }
+    }
+
+    func brew(_ verb: String, _ name: String) {
+        toast = Toast(text: verb == "start" ? "Arrancando \(name)…" : "Reiniciando \(name)…")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ok = BrewServices.run(verb, name)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.toast = ok ? Toast(text: "\(name): hecho") : Toast(text: "No se pudo \(verb == "start" ? "arrancar" : "reiniciar") \(name)", isError: true)
+                self.lastBrewCheck = .distantPast
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.scanPorts(dockerMaxAge: 5, dockerStats: false) }
+            }
+        }
+    }
+
+    // MARK: - Reiniciar
+
+    func canRestart(_ row: ProcRow, in group: ProcGroup) -> Bool {
+        if row.isProtected || row.needsAdmin { return false }
+        switch row.action {
+        case .dockerStop, .brewStop: return true
+        case .kill: return group.kind != .system
+        }
+    }
+
+    /// Reinicia un servidor: lee su comando, entorno y carpeta, lo cierra y lo vuelve a lanzar en segundo plano.
+    func restart(_ row: ProcRow, in group: ProcGroup) {
+        switch row.action {
+        case .brewStop(let f, _):
+            brew("restart", f)
+        case .dockerStop(let ids):
+            busyRows.insert(row.id)
+            Task {
+                let r = await Self.background { () -> Int32 in
+                    guard let docker = ShellEnv.which("docker") else { return -1 }
+                    return Subprocess.run(docker, ["restart"] + ids, timeout: 120, env: ShellEnv.userEnvironment).code
+                }
+                busyRows.remove(row.id)
+                toast = r == 0 ? Toast(text: "Reiniciado: \(row.title)") : Toast(text: "No se pudo reiniciar \(row.title)", isError: true)
+                scanPorts(dockerMaxAge: 0, dockerStats: false)
+            }
+        case .kill(let pids):
+            guard let root = pids.first, let cl = ProcessScanner.commandLine(of: root) else {
+                toast = Toast(text: "No pude leer el comando de \(row.title)", isError: true)
+                return
+            }
+            busyRows.insert(row.id)
+            for p in row.ports { recentlyClosed["\(group.id):\(p.port)"] = Date() }
+            let ports = Set(row.ports.map(\.port))
+            Task {
+                _ = await ActionRunner.perform([row.action])
+                // Espera (máx. 5 s) a que los puertos queden libres antes de relanzar.
+                for _ in 0..<20 where !ports.isEmpty {
+                    let busy = await Self.background { Self.listeningPorts().intersection(ports) }
+                    if busy.isEmpty { break }
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                }
+                let log = Launch.logURL("\(group.name)-\(row.title)")
+                let ok = await Self.background { Launch.detached(args: cl.args, env: cl.env, cwd: cl.cwd, log: log) }
+                busyRows.remove(row.id)
+                toast = ok ? Toast(text: "Reiniciado: \(row.title)") : Toast(text: "No se pudo relanzar \(row.title)", isError: true)
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                scanPorts(dockerMaxAge: 30, dockerStats: false)
+            }
+        }
+    }
+
+    nonisolated private static func listeningPorts() -> Set<Int> {
+        Set(ProcessScanner().scan(includeUDP: false).values.flatMap { $0.listeners.map(\.port) })
+    }
+
+    nonisolated private static func background<T>(_ work: @escaping () -> T) async -> T {
+        await withCheckedContinuation { c in DispatchQueue.global(qos: .userInitiated).async { c.resume(returning: work()) } }
+    }
+
+    // MARK: - Perfiles y Docker
+
+    func isRunning(_ p: LaunchProfile) -> Bool {
+        groups.contains { $0.path == p.path && !$0.rows.isEmpty }
+    }
+
+    func start(_ p: LaunchProfile) {
+        toast = Toast(text: "Arrancando \(p.name)…")
+        profiles.start(p) { [weak self] msg in
+            self?.toast = Toast(text: msg, isError: msg.hasPrefix("Errores"))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self?.scanPorts(dockerMaxAge: 0, dockerStats: false) }
+        }
+    }
+
+    func saveProfile(from group: ProcGroup) {
+        guard var p = profiles.capture(from: group) else {
+            toast = Toast(text: "No pude leer los comandos de \(group.name)", isError: true)
+            return
+        }
+        if let i = profiles.profiles.firstIndex(where: { $0.path == p.path }) {
+            p.id = profiles.profiles[i].id
+            profiles.profiles[i] = p
+        } else {
+            profiles.profiles.append(p)
+        }
+        toast = Toast(text: "Perfil «\(p.name)» guardado (\(p.steps.count) paso\(p.steps.count == 1 ? "" : "s"))")
+    }
+
+    var dockerDesktopRunning: Bool {
+        NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.docker.docker" }
+    }
+
+    func compose(_ verb: [String], project: String) {
+        toast = Toast(text: "docker compose \(verb.joined(separator: " "))…")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let (ok, out) = DockerDesktop.compose(verb, project: project)
+            DispatchQueue.main.async { [weak self] in
+                self?.toast = ok ? Toast(text: "\(project): hecho") : Toast(text: String(out.suffix(160)), isError: true)
+                self?.scanPorts(dockerMaxAge: 0, dockerStats: false)
+            }
+        }
     }
 
     // MARK: - Proyectos olvidados

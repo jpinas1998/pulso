@@ -103,6 +103,43 @@ final class ProcessScanner: @unchecked Sendable {
         return args
     }
 
+    /// Línea de comandos completa de un proceso: ejecutable, argumentos, entorno y carpeta de trabajo.
+    /// Se usa para reiniciar un servidor exactamente igual que estaba.
+    struct CommandLine {
+        var executable: String
+        var args: [String]
+        var env: [String: String]
+        var cwd: String
+    }
+
+    static func commandLine(of pid: pid_t) -> CommandLine? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = argmax
+        var buf = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0, size > 4 else { return nil }
+        let argc = buf.withUnsafeBytes { $0.load(as: Int32.self) }
+        var i = 4
+        let exeStart = i
+        while i < size && buf[i] != 0 { i += 1 }
+        let exe = String(decoding: buf[exeStart..<i], as: UTF8.self)
+        while i < size && buf[i] == 0 { i += 1 }
+        var strings: [String] = []
+        while i < size {
+            let s = i
+            while i < size && buf[i] != 0 { i += 1 }
+            if s == i { break }                       // fin del entorno
+            strings.append(String(decoding: buf[s..<i], as: UTF8.self))
+            i += 1
+        }
+        let args = Array(strings.prefix(Int(argc)))
+        var env: [String: String] = [:]
+        for kv in strings.dropFirst(Int(argc)) {
+            if let eq = kv.firstIndex(of: "=") { env[String(kv[..<eq])] = String(kv[kv.index(after: eq)...]) }
+        }
+        guard let cwd = cwd(pid), !args.isEmpty else { return nil }
+        return CommandLine(executable: exe, args: args, env: env, cwd: cwd)
+    }
+
     // MARK: - libproc
 
     private static let argmax: Int = {
@@ -133,7 +170,7 @@ final class ProcessScanner: @unchecked Sendable {
         return r > 0 ? String(cString: buf) : ""
     }
 
-    private static func cwd(_ pid: pid_t) -> String? {
+    static func cwd(_ pid: pid_t) -> String? {
         var info = proc_vnodepathinfo()
         let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
         guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
