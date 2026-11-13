@@ -1,0 +1,77 @@
+name: Pulso
+options:
+  bundleIdPrefix: com.jpinas
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  developmentLanguage: es
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: 8X4GF2Y34P
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: NO
+    DEAD_CODE_STRIPPING: YES
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+targets:
+  Pulso:
+    type: application
+    platform: macOS
+    sources:
+      - path: Pulso
+      - path: Shared
+      - path: scripts/limpiar-mac.sh
+        buildPhase: resources
+    dependencies:
+      - target: PulsoWidget
+    info:
+      path: Pulso/Info.plist
+      properties:
+        CFBundleDisplayName: Pulso
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        CFBundleURLTypes:
+          - CFBundleURLName: com.jpinas.pulso
+            CFBundleURLSchemes: [pulso]
+    entitlements:
+      path: Pulso/Pulso.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - 8X4GF2Y34P.com.jpinas.pulso
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jpinas.pulso
+        PRODUCT_NAME: Pulso
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  PulsoWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: PulsoWidget
+      - path: Shared
+    info:
+      path: PulsoWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Pulso
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: PulsoWidget/PulsoWidget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - 8X4GF2Y34P.com.jpinas.pulso
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jpinas.pulso.widget
+        PRODUCT_NAME: PulsoWidget
