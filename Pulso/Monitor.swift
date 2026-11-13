@@ -43,6 +43,9 @@ final class Monitor: ObservableObject {
     @Published private(set) var panelOpen = false
     @Published var toast: Toast?
     @Published var busyRows = Set<String>()
+    @Published var consumers: [Consumer] = []
+    /// Última vez que cada proyecto/grupo usó CPU (para detectar proyectos olvidados).
+    @Published private(set) var lastActive: [String: Date] = [:]
 
     let cleanup = CleanupService()
     let history = HistoryStore()
@@ -228,10 +231,13 @@ final class Monitor: ObservableObject {
             let procs = scanner.scan(includeUDP: udp)
             let containers = docker.current(maxAge: dockerMaxAge, wantStats: dockerStats)
             let groups = grouper.build(procs: procs, containers: containers, scanner: scanner)
+            let consumers = grouper.consumers(procs: procs, scanner: scanner)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.scanning = false
                 self.groups = groups
+                self.consumers = consumers
+                self.trackActivity(groups)
                 self.portAlerts(groups)
                 then?()
             }
@@ -242,6 +248,82 @@ final class Monitor: ObservableObject {
         disk = SystemSampler.disk()
         memory = SystemSampler.memory()
         scanPorts(dockerMaxAge: 0, dockerStats: true) { [weak self] in self?.writeWidget(reload: true) }
+    }
+
+    // MARK: - Proyectos olvidados
+
+    /// Un grupo cuenta como activo si usa más del 0,3 % de la CPU de la máquina (≈2,5 % de un núcleo).
+    private func trackActivity(_ groups: [ProcGroup]) {
+        let now = Date()
+        var next: [String: Date] = [:]
+        for g in groups where g.kind == .project || g.kind == .docker {
+            next[g.id] = g.cpu > 0.003 ? now : (lastActive[g.id] ?? now)
+        }
+        lastActive = next
+        idleAlert()
+    }
+
+    #if PULSO_SNAPSHOT
+    func simulateIdle(minutes: Double) {
+        for g in groups where g.cpu <= 0.003 { lastActive[g.id] = Date().addingTimeInterval(-minutes * 60) }
+    }
+    #endif
+
+    func idleFor(_ g: ProcGroup) -> TimeInterval? {
+        guard let d = lastActive[g.id] else { return nil }
+        let t = Date().timeIntervalSince(d)
+        return t >= 5 * 60 ? t : nil
+    }
+
+    var forgotten: [ProcGroup] {
+        let limit = TimeInterval(max(5, Prefs.int(Prefs.Key.idleProjectMinutes))) * 60
+        return groups.filter { ($0.kind == .project || $0.kind == .docker) && (idleFor($0) ?? 0) >= limit && $0.canCloseAll }
+            .sorted { $0.ram > $1.ram }
+    }
+
+    private func idleAlert() {
+        guard Prefs.bool(Prefs.Key.alertIdleProjects) else { return }
+        let f = forgotten
+        let ram = f.reduce(0) { $0 + $1.ram }
+        guard !f.isEmpty, ram > 1_073_741_824 else { return }
+        let names = f.prefix(3).map(\.name).joined(separator: ", ")
+        alerts.post(id: "idle-projects", title: "Proyectos sin usar ocupando \(Fmt.mem(ram))",
+                    body: "\(names)\(f.count > 3 ? " y \(f.count - 3) más" : "") llevan más de \(Prefs.int(Prefs.Key.idleProjectMinutes)) min sin actividad. Ciérralos desde Pulso → Procesos.",
+                    cooldown: 3 * 3600)
+    }
+
+    func closeForgotten() {
+        let f = forgotten
+        Task { await run(f.flatMap(\.closableRows), label: "\(f.count) proyecto\(f.count == 1 ? "" : "s") sin usar", groupId: "forgotten") }
+    }
+
+    /// Modo foco: cierra todos los demás proyectos (no toca servicios ni apps).
+    func focus(on group: ProcGroup) {
+        let others = focusTargets(for: group)
+        Task { await run(others.flatMap(\.closableRows), label: "todo menos \(group.name)", groupId: "focus") }
+    }
+
+    func focusTargets(for group: ProcGroup) -> [ProcGroup] {
+        groups.filter { ($0.kind == .project || $0.kind == .docker) && $0.id != group.id && $0.canCloseAll }
+    }
+
+    /// Cerrar desde "Lo que más consume": las apps se cierran como con ⌘Q (pueden pedir guardar).
+    func close(_ c: Consumer) {
+        switch c.kind {
+        case .app(let bundle):
+            let apps = NSWorkspace.shared.runningApplications.filter { $0.bundleURL?.path == bundle }
+            if apps.isEmpty {
+                Task { await run([ProcRow(id: c.id, title: c.name, detail: "", ports: [], action: .kill(pids: c.pids))], label: c.name, groupId: c.id) }
+            } else {
+                apps.forEach { $0.terminate() }
+                toast = Toast(text: "Pidiendo a \(c.name) que se cierre")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.scanPorts(dockerMaxAge: 30, dockerStats: false) }
+            }
+        case .project(let gid):
+            if let g = groups.first(where: { $0.id == gid }) { closeAll(g) }
+        case .process:
+            Task { await run([ProcRow(id: c.id, title: c.name, detail: "", ports: [], action: .kill(pids: c.pids))], label: c.name, groupId: c.id) }
+        }
     }
 
     // MARK: - Acciones

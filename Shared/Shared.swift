@@ -190,6 +190,15 @@ enum Fmt {
         return s.replacingOccurrences(of: ".", with: ",") + " " + units[i]
     }
 
+    /// 50 min, 2 h, 3 h 20 min, 2 d
+    static func duration(_ t: TimeInterval) -> String {
+        let m = Int(t / 60)
+        if m < 60 { return "\(max(1, m)) min" }
+        let h = m / 60
+        if h < 24 { return m % 60 >= 10 && h < 6 ? "\(h) h \(m % 60) min" : "\(h) h" }
+        return "\(h / 24) d"
+    }
+
     static func pct(_ f: Double) -> String { "\(Int((f * 100).rounded()))%" }
 
     static func time(_ d: Date) -> String {

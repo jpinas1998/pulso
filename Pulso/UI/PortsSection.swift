@@ -162,6 +162,7 @@ struct GroupCard: View {
     var forceExpanded = false
     @State private var expanded: Bool
     @State private var confirming = false
+    @State private var confirmingFocus = false
     @State private var hover = false
 
     static var expandProjectsByDefault = false
@@ -178,6 +179,7 @@ struct GroupCard: View {
         VStack(alignment: .leading, spacing: 8) {
             header
             if confirming { confirmBar.transition(.opacity) }
+            if confirmingFocus { focusBar.transition(.opacity) }
             if isOpen {
                 VStack(spacing: 0) {
                     ForEach(Array(group.rows.enumerated()), id: \.element.id) { i, row in
@@ -214,6 +216,14 @@ struct GroupCard: View {
                     Text(group.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                     Text(verbatim: "×\(group.processCount)").font(.system(size: 9)).foregroundStyle(.tertiary)
                         .help("\(group.processCount) procesos")
+                    if let idle = m.idleFor(group), idle >= 15 * 60 {
+                        Label(Fmt.duration(idle), systemImage: "moon.zzz.fill")
+                            .font(.system(size: 9, weight: .medium))
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Palette.track))
+                            .foregroundStyle(.secondary)
+                            .help("Sin actividad de CPU desde hace \(Fmt.duration(idle))")
+                    }
                 }
                 if let s = group.subtitle, !s.isEmpty {
                     Text(s).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
@@ -224,8 +234,8 @@ struct GroupCard: View {
                 Text(group.ram > 0 ? Fmt.mem(group.ram) : "—").font(.system(size: 12, weight: .medium)).monospacedDigit()
                 Text("CPU \(Fmt.pct(group.cpu))").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
             }
-            if let path = group.path {
-                MoreMenu(visible: hover, help: "Abrir \(group.name) en…") { OpenInMenuItems(path: path) }
+            if group.path != nil || group.kind == .project {
+                MoreMenu(visible: hover, help: "Más acciones de \(group.name)") { groupActions }
             }
             if group.canCloseAll {
                 IconButton(symbol: "stop.circle", help: "Cerrar todo lo de \(group.name)", color: hover ? .secondary : .clear) {
@@ -239,13 +249,41 @@ struct GroupCard: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { expanded.toggle() }
-        .contextMenu {
-            if let path = group.path { OpenInMenuItems(path: path) }
-            if group.canCloseAll {
-                Divider()
-                Button("Cerrar todo…") { confirming = true }
+        .contextMenu { groupActions }
+    }
+
+    @ViewBuilder
+    private var groupActions: some View {
+        if let path = group.path { OpenInMenuItems(path: path) }
+        if group.kind == .project || group.kind == .docker, !m.focusTargets(for: group).isEmpty {
+            Divider()
+            Button("Modo foco: cerrar los demás proyectos…") { confirmingFocus = true }
+        }
+        if group.canCloseAll {
+            Divider()
+            Button("Cerrar todo…") { confirming = true }
+        }
+    }
+
+    private var focusBar: some View {
+        let others = m.focusTargets(for: group)
+        let ram = others.reduce(0) { $0 + $1.ram }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "scope").foregroundStyle(Color.accentColor)
+                Text("Modo foco en \(group.name)").font(.caption.weight(.semibold))
+            }
+            Text("Se cerrarán \(others.map(\.name).joined(separator: ", ")) y liberarás ~\(Fmt.mem(ram)). Los servicios (Postgres, Redis…) y las apps no se tocan.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button("Cancelar") { confirmingFocus = false }.controlSize(.small)
+                Button("Cerrar los demás") { confirmingFocus = false; m.focus(on: group) }
+                    .controlSize(.small).buttonStyle(.borderedProminent)
             }
         }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.1)))
     }
 
     private var confirmBar: some View {

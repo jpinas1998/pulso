@@ -67,6 +67,8 @@ final class Grouper: @unchecked Sendable {
     private var gitRoots: [String: String?] = [:]
     private var gitRootsAge = Date()
     private var bundleNames: [String: String] = [:]
+    /// pid → raíz del proyecto, del último `build`.
+    private(set) var pidToProject: [pid_t: String] = [:]
 
     private static let shells: Set<String> = ["zsh", "-zsh", "bash", "-bash", "sh", "fish", "-fish", "login", "tmux", "screen", "nu", "dash"]
     private static let notMembers: Set<String> = ["git", "ssh", "less", "more", "man", "vim", "nvim", "vi", "nano", "emacs", "top", "htop",
@@ -150,8 +152,10 @@ final class Grouper: @unchecked Sendable {
         var rowMembers: [pid_t: [pid_t]] = [:]
         for (pid, head) in attached { rowMembers[head, default: []].append(pid) }
 
+        pidToProject = [:]
         for (head, members) in rowMembers {
             guard let hp = procs[head], let root = projectOf[head] ?? members.compactMap({ projectOf[$0] }).first else { continue }
+            for pid in members { pidToProject[pid] = root }
             let ps = members.compactMap { procs[$0] }
             let listeners = ps.flatMap(\.listeners).filter { !containerPorts.contains("\($0.proto.rawValue)\($0.port)") }
             var row = makeRow(hp, ps, scanner)
@@ -329,7 +333,7 @@ final class Grouper: @unchecked Sendable {
         return "java"
     }
 
-    private func appName(_ path: String) -> String? {
+    func appName(_ path: String) -> String? {
         guard let r = path.range(of: ".app/Contents/") else { return nil }
         let bundlePath = String(path[..<r.lowerBound]) + ".app"
         if let n = bundleNames[bundlePath] { return n }

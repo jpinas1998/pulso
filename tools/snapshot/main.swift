@@ -78,6 +78,10 @@ func run() async {
         PortsSection.initialQuery = "3000"
         render(panel(), width: 432, dark: dark, name: "8-busqueda-libre\(sfx)")
         PortsSection.initialQuery = ""
+        m.simulateIdle(minutes: 125)
+        UserDefaults.standard.set("processes", forKey: Prefs.Key.panelTab)
+        render(panel(), width: 432, dark: dark, name: "9-procesos\(sfx)")
+        UserDefaults.standard.set("servers", forKey: Prefs.Key.panelTab)
         GroupCard.expandProjectsByDefault = false
         for (t, n) in [(Tile.cpu, "3-detalle-cpu"), (.memory, "4-detalle-memoria"), (.disk, "5-detalle-disco-limpieza")] {
             PanelView.initialTile = t

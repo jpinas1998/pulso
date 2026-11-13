@@ -8,6 +8,9 @@ enum Prefs {
         static let menuBarText = "menuBarText"
         static let showUDP = "showUDP"
         static let hotKey = "hotKey"
+        static let panelTab = "panelTab"
+        static let idleProjectMinutes = "idleProjectMinutes"
+        static let alertIdleProjects = "alertIdleProjects"
 
         static let alertDisk = "alertDisk", alertDiskGB = "alertDiskGB"
         static let alertPressure = "alertPressure"
@@ -33,6 +36,9 @@ enum Prefs {
             Key.menuBarText: "none",
             Key.showUDP: false,
             Key.hotKey: "opt-cmd-p",
+            Key.panelTab: "servers",
+            Key.idleProjectMinutes: 60,
+            Key.alertIdleProjects: true,
             Key.alertDisk: true, Key.alertDiskGB: 15,
             Key.alertPressure: true,
             Key.alertSwap: true, Key.alertSwapGB: 6,

@@ -3,11 +3,62 @@ import SwiftUI
 
 enum Tile: String { case cpu, memory, disk }
 
+enum PanelTab: String, CaseIterable, Identifiable {
+    case servers, processes
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .servers: "Servidores"
+        case .processes: "Procesos"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .servers: "network"
+        case .processes: "memorychip"
+        }
+    }
+}
+
+struct PanelTabs: View {
+    @Binding var selection: String
+    var badges: [PanelTab: Int] = [:]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(PanelTab.allCases) { t in
+                let on = selection == t.rawValue
+                Button { withAnimation(.snappy(duration: 0.2)) { selection = t.rawValue } } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: t.symbol).font(.system(size: 10, weight: .semibold))
+                        Text(t.label).font(.system(size: 12, weight: on ? .semibold : .regular))
+                        if let n = badges[t], n > 0 {
+                            Text(verbatim: "\(n)").font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 4).padding(.vertical, 1)
+                                .background(Capsule().fill(Severity.warn.color.opacity(0.25)))
+                                .foregroundStyle(Severity.warn.color)
+                        }
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Color.primary.opacity(0.09) : .clear))
+                    .foregroundStyle(on ? Color.primary : Color.secondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.card))
+    }
+}
+
 struct PanelView: View {
     @EnvironmentObject private var m: Monitor
     @EnvironmentObject private var cleanup: CleanupService
     @State private var selected: Tile? = PanelView.initialTile
     @State private var contentHeight: CGFloat = 300
+    @AppStorage(Prefs.Key.panelTab) private var tab = "servers"
 
     static var initialTile: Tile?
     static var unlimitedHeight = false
@@ -17,13 +68,18 @@ struct PanelView: View {
         VStack(spacing: 0) {
             header.padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 10)
             tiles.padding(.horizontal, 14)
+            PanelTabs(selection: $tab, badges: [.processes: m.forgotten.count])
+                .padding(.horizontal, 14).padding(.top, 10)
 
             ScrollView {
                 VStack(spacing: 14) {
                     if let selected {
                         detail(selected).transition(.opacity.combined(with: .move(edge: .top)))
                     }
-                    PortsSection()
+                    switch PanelTab(rawValue: tab) ?? .servers {
+                    case .servers: PortsSection()
+                    case .processes: ProcessesSection()
+                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)

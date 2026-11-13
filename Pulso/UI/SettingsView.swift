@@ -20,6 +20,7 @@ private struct GeneralSettings: View {
     @AppStorage(Prefs.Key.backgroundMinutes) private var backgroundMinutes = 5
     @AppStorage(Prefs.Key.showUDP) private var showUDP = false
     @AppStorage(Prefs.Key.hotKey) private var hotKey = "opt-cmd-p"
+    @AppStorage(Prefs.Key.idleProjectMinutes) private var idleMinutes = 60
     @State private var hotKeyFailed = false
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
@@ -58,6 +59,7 @@ private struct GeneralSettings: View {
                     .onChange(of: liveInterval) { _, _ in m.scheduleLiveTimer() }
                 Stepper("Panel cerrado: lectura completa cada \(backgroundMinutes) min", value: $backgroundMinutes, in: 1...30)
                 Toggle("Mostrar puertos UDP", isOn: $showUDP)
+                Stepper("Proyecto «sin usar» tras \(Fmt.duration(TimeInterval(idleMinutes * 60))) sin CPU", value: $idleMinutes, in: 15...480, step: 15)
             } header: {
                 Text("Refresco")
             } footer: {
@@ -87,6 +89,7 @@ private struct AlertSettings: View {
     @AppStorage(Prefs.Key.alertCPUMinutes) private var cpuMin = 5
     @AppStorage(Prefs.Key.alertServerDown) private var down = true
     @AppStorage(Prefs.Key.alertNewPort) private var newPort = false
+    @AppStorage(Prefs.Key.alertIdleProjects) private var idleProjects = true
     @AppStorage(Prefs.Key.alertCleanup) private var cleanup = true
 
     var body: some View {
@@ -106,6 +109,7 @@ private struct AlertSettings: View {
             Section("Servidores") {
                 Toggle("Un servidor se detiene (sin que lo cierres tú)", isOn: $down)
                 Toggle("Se abre un puerto nuevo", isOn: $newPort)
+                Toggle("Proyectos sin usar que ocupan más de 1 GB de RAM", isOn: $idleProjects)
             }
             Section("Limpieza") {
                 Toggle("Limpieza terminada, errores y mediciones atascadas más de 24 h", isOn: $cleanup)
