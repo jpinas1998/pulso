@@ -29,6 +29,7 @@ struct PulsoApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
+        Prefs.register()
         // pulso://… (botones del widget)
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
                                                      forEventClass: AEEventClass(kInternetEventClass),
@@ -37,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in Monitor.shared.start() }
+        HotKey.shared.action = { Task { @MainActor in AppDelegate.togglePanel() } }
+        HotKey.shared.apply(presetId: Prefs.string(Prefs.Key.hotKey))
         // La primera vez, Pulso se añade a los ítems de inicio de sesión (se puede quitar en Ajustes).
         let key = "loginItemConfigured"
         if !UserDefaults.standard.bool(forKey: key) {
@@ -83,11 +86,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     static func closePanelWindow() { panelWindow?.close() }
 
+    /// Atajo global: abre el panel o, si ya está delante, lo cierra.
+    @MainActor
+    static func togglePanel() {
+        if let w = panelWindow, w.isVisible, w.isKeyWindow, NSApp.isActive {
+            w.close()
+        } else {
+            openPanel()
+        }
+    }
+
     private static var settingsWindow: NSWindow?
 
     /// Ajustes en ventana propia (SettingsLink/openSettings no es fiable en apps sin Dock).
     @MainActor
     static func openSettings() {
+        LaunchTarget.rescan()
         if settingsWindow == nil {
             let host = NSHostingController(rootView: SettingsView()
                 .environmentObject(Monitor.shared)

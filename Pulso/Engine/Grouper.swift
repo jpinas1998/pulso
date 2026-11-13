@@ -34,6 +34,9 @@ struct ProcRow: Identifiable {
     var needsAdmin = false
     var action: RowAction
     var processCount = 1
+    var pid: pid_t?
+    var cwd: String?
+    var args: [String] = []
 }
 
 struct ProcGroup: Identifiable {
@@ -42,6 +45,7 @@ struct ProcGroup: Identifiable {
     var name: String
     var subtitle: String?
     var rows: [ProcRow]
+    var path: String?
 
     var ports: [PortRef] {
         var seen = Set<String>()
@@ -196,7 +200,8 @@ final class Grouper: @unchecked Sendable {
             let key = c.project ?? "_"
             if dockerGroups[key] == nil {
                 dockerGroups[key] = ProcGroup(id: "docker:\(key)", kind: .docker, name: c.project ?? "Docker",
-                                              subtitle: c.project != nil ? "Docker Compose" : "Contenedores", rows: [])
+                                              subtitle: c.project != nil ? "Docker Compose" : "Contenedores", rows: [],
+                                              path: c.workingDir)
             }
             dockerGroups[key]?.rows.append(row)
         }
@@ -216,7 +221,7 @@ final class Grouper: @unchecked Sendable {
         for (root, rows) in projectRows {
             groups.append(ProcGroup(id: "project:\(root)", kind: .project,
                                     name: (root as NSString).lastPathComponent,
-                                    subtitle: displayParent(root), rows: sortRows(rows)))
+                                    subtitle: displayParent(root), rows: sortRows(rows), path: root))
         }
         groups.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         groups += dockerGroups.values.sorted { $0.name < $1.name }.map { g in
@@ -241,7 +246,8 @@ final class Grouper: @unchecked Sendable {
                        title: friendlyName(head, args),
                        detail: args.isEmpty ? head.path : args.joined(separator: " "),
                        ports: [], ram: ram > 0 ? ram : nil, cpu: head.isMine ? cpu : nil,
-                       action: .kill(pids: [head.pid]), processCount: members.count)
+                       action: .kill(pids: [head.pid]), processCount: members.count,
+                       pid: head.pid, cwd: head.cwd, args: args)
     }
 
     private static let serviceNames: [String: String] = [

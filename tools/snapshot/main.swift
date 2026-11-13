@@ -73,6 +73,12 @@ func run() async {
         PanelView.initialTile = nil; GroupCard.expandProjectsByDefault = true
         render(panel(), width: 432, dark: dark, name: "2-panel-proyectos-abiertos\(sfx)")
         GroupCard.expandProjectsByDefault = false
+        PortsSection.initialQuery = "80"
+        render(panel(), width: 432, dark: dark, name: "7-busqueda-80\(sfx)")
+        PortsSection.initialQuery = "3000"
+        render(panel(), width: 432, dark: dark, name: "8-busqueda-libre\(sfx)")
+        PortsSection.initialQuery = ""
+        GroupCard.expandProjectsByDefault = false
         for (t, n) in [(Tile.cpu, "3-detalle-cpu"), (.memory, "4-detalle-memoria"), (.disk, "5-detalle-disco-limpieza")] {
             PanelView.initialTile = t
             render(panel(), width: 432, dark: dark, name: n + sfx)

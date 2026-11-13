@@ -7,6 +7,7 @@ enum Prefs {
         static let backgroundMinutes = "backgroundMinutes"
         static let menuBarText = "menuBarText"
         static let showUDP = "showUDP"
+        static let hotKey = "hotKey"
 
         static let alertDisk = "alertDisk", alertDiskGB = "alertDiskGB"
         static let alertPressure = "alertPressure"
@@ -31,6 +32,7 @@ enum Prefs {
             Key.backgroundMinutes: 5,
             Key.menuBarText: "none",
             Key.showUDP: false,
+            Key.hotKey: "opt-cmd-p",
             Key.alertDisk: true, Key.alertDiskGB: 15,
             Key.alertPressure: true,
             Key.alertSwap: true, Key.alertSwapGB: 6,

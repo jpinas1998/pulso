@@ -19,6 +19,8 @@ private struct GeneralSettings: View {
     @AppStorage(Prefs.Key.liveInterval) private var liveInterval = 2.0
     @AppStorage(Prefs.Key.backgroundMinutes) private var backgroundMinutes = 5
     @AppStorage(Prefs.Key.showUDP) private var showUDP = false
+    @AppStorage(Prefs.Key.hotKey) private var hotKey = "opt-cmd-p"
+    @State private var hotKeyFailed = false
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
 
@@ -36,6 +38,14 @@ private struct GeneralSettings: View {
                         }
                     }
                 if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
+                Picker("Atajo para abrir Pulso", selection: $hotKey) {
+                    ForEach(HotKey.presets) { Text($0.label).tag($0.id) }
+                    Text("Desactivado").tag("none")
+                }
+                .onChange(of: hotKey) { _, v in hotKeyFailed = !HotKey.shared.apply(presetId: v) }
+                if hotKeyFailed {
+                    Text("Ese atajo ya lo usa otra app. Elige otro.").font(.caption).foregroundStyle(.red)
+                }
                 Picker("En la barra de menús", selection: $menuBarText) {
                     Text("Solo el icono").tag("none")
                     Text("CPU %").tag("cpu")
