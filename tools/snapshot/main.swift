@@ -106,9 +106,9 @@ func run() async {
         }
         do { let s = m.makeWidgetSnapshot()
             let widgets = HStack(alignment: .top, spacing: 24) {
-                WidgetChrome(w: 170, h: 170, content: SmallView(s: s))
-                WidgetChrome(w: 364, h: 170, content: MediumView(s: s))
-                WidgetChrome(w: 364, h: 382, content: LargeView(s: s))
+                WidgetChrome(w: 158, h: 158, content: SmallView(s: s))
+                WidgetChrome(w: 344, h: 158, content: MediumView(s: s))
+                WidgetChrome(w: 344, h: 344, content: LargeView(s: s))
             }
             .padding(30)
             .background(LinearGradient(colors: dark ? [Color(red: 0.1, green: 0.12, blue: 0.2), Color(red: 0.2, green: 0.1, blue: 0.25)]

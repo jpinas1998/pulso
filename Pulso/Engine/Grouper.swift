@@ -123,11 +123,12 @@ final class Grouper: @unchecked Sendable {
         var attached: [pid_t: pid_t] = [:]   // pid -> pid de la fila a la que pertenece
         for a in anchors {
             attached[a] = a
-            for d in descendants(a) where attached[d] == nil { attached[d] = a }
+            for d in descendants(a) where attached[d] == nil && (projectOf[d] == nil || projectOf[d] == projectOf[a]) { attached[d] = a }
         }
         var anchorsBelow: [pid_t: [pid_t]] = [:]
         for m in projectOf.keys where attached[m] == nil {
-            anchorsBelow[m] = descendants(m).filter { anchors.contains($0) }
+            // Solo cuentan los servidores del mismo proyecto: un script lanzado desde otro repo no es su envoltorio.
+            anchorsBelow[m] = descendants(m).filter { anchors.contains($0) && projectOf[$0] == projectOf[m] }
         }
         for m in projectOf.keys where attached[m] == nil {
             let below = anchorsBelow[m] ?? []

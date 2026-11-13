@@ -80,7 +80,7 @@ final class ProfileStore: ObservableObject {
     func capture(from group: ProcGroup) -> LaunchProfile? {
         guard let path = group.path else { return nil }
         let roots = group.rows.compactMap { row -> pid_t? in
-            if case .kill(let pids) = row.action { return pids.first }
+            if case .kill(let pids) = row.action { return ProcessScanner.restartRoot(pids) }
             return nil
         }
         var parents: [pid_t: pid_t] = [:]
@@ -101,7 +101,7 @@ final class ProfileStore: ObservableObject {
         }
         let steps = top.compactMap { pid -> LaunchStep? in
             guard let cl = ProcessScanner.commandLine(of: pid) else { return nil }
-            let title = group.rows.first { if case .kill(let p) = $0.action { return p.first == pid }; return false }?.title ?? cl.args[0]
+            let title = group.rows.first { if case .kill(let p) = $0.action { return p.contains(pid) }; return false }?.title ?? cl.args[0]
             return LaunchStep(kind: .command, title: title, cwd: cl.cwd, args: cl.args, env: Self.portableEnv(cl.env))
         }
         guard !steps.isEmpty else { return nil }

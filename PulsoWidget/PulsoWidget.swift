@@ -69,7 +69,7 @@ private struct Header: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text("Pulso").font(.system(size: 12, weight: .semibold, design: .rounded))
+            Text("Pulso").font(.system(size: 11, weight: .semibold, design: .rounded))
             Spacer(minLength: 2)
             if Date().timeIntervalSince(s.date) > 20 * 60 {
                 Label("sin datos recientes", systemImage: "exclamationmark.circle").font(.system(size: 9)).foregroundStyle(.orange)
@@ -80,41 +80,49 @@ private struct Header: View {
     }
 }
 
+private struct MiniBar: View {
+    var fraction: Double
+    var color: Color
+
+    var body: some View {
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.12))
+                Capsule().fill(color).frame(width: max(3, g.size.width * min(1, fraction)))
+            }
+        }
+        .frame(height: 3)
+    }
+}
+
 private struct Metric: View {
     var title: String
     var value: String
     var fraction: Double
     var severity: Severity
-    var compact = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.system(size: compact ? 10 : 11)).foregroundStyle(.secondary)
+                Text(title).font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer(minLength: 2)
-                Text(value).font(.system(size: compact ? 12 : 14, weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(value).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.8)
             }
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.1))
-                    Capsule().fill(severity.color).frame(width: max(4, g.size.width * min(1, fraction)))
-                }
-            }
-            .frame(height: 4)
+            MiniBar(fraction: fraction, color: severity.color)
         }
     }
 }
 
 private struct Metrics: View {
     var s: WidgetSnapshot
-    var compact = false
 
     var body: some View {
-        VStack(spacing: compact ? 7 : 9) {
-            Metric(title: "CPU", value: Fmt.pct(s.cpu), fraction: s.cpu, severity: .forCPU(s.cpu), compact: compact)
-            Metric(title: "Memoria", value: Fmt.pct(s.memFraction), fraction: s.memFraction, severity: s.pressure.severity, compact: compact)
+        VStack(spacing: 7) {
+            Metric(title: "CPU", value: Fmt.pct(s.cpu), fraction: s.cpu, severity: .forCPU(s.cpu))
+            Metric(title: "Memoria", value: Fmt.pct(s.memFraction), fraction: s.memFraction, severity: s.pressure.severity)
             Metric(title: "Disco libre", value: Fmt.disk(s.diskFree), fraction: s.diskUsedFraction,
-                   severity: .forDisk(free: s.diskFree, total: s.diskTotal), compact: compact)
+                   severity: .forDisk(free: s.diskFree, total: s.diskTotal))
         }
     }
 }
@@ -123,22 +131,18 @@ struct SmallView: View {
     var s: WidgetSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             Header(s: s)
-            Metrics(s: s, compact: true)
+            Metrics(s: s)
             Spacer(minLength: 0)
-            footer
-        }
-    }
-
-    private var footer: some View {
-        let ports = s.groups.reduce(0) { $0 + $1.ports.count }
-        return HStack(spacing: 4) {
-            Circle().fill(ports > 0 ? Severity.ok.color : Color.secondary).frame(width: 5, height: 5)
-            Text("\(ports) puerto\(ports == 1 ? "" : "s")").font(.system(size: 10)).foregroundStyle(.secondary)
-            Spacer()
-            if let r = s.cleanup.reclaimable, r > 500_000_000 {
-                Text("~\(Fmt.disk(r))").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+            let ports = s.groups.reduce(0) { $0 + $1.ports.count }
+            HStack(spacing: 4) {
+                Circle().fill(ports > 0 ? Severity.ok.color : Color.secondary).frame(width: 5, height: 5)
+                Text("\(ports) puerto\(ports == 1 ? "" : "s")").font(.system(size: 9.5)).foregroundStyle(.secondary)
+                Spacer(minLength: 2)
+                if let r = s.cleanup.reclaimable, r > 500_000_000 {
+                    Text("~\(Fmt.disk(r))").font(.system(size: 9.5, weight: .medium)).foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -150,20 +154,21 @@ private struct ServerRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle().fill(g.kind.tint).frame(width: 6, height: 6)
+            Circle().fill(g.kind.tint).frame(width: 5, height: 5)
             VStack(alignment: .leading, spacing: 0) {
-                Text(g.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                Text(g.name).font(.system(size: 10.5, weight: .medium)).lineLimit(1)
                 Text(g.ports.isEmpty ? "sin puertos" : g.ports.prefix(5).map { ":\($0)" }.joined(separator: " "))
-                    .font(.system(size: 9.5, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.system(size: 8.5, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 2)
-            Text(Fmt.mem(g.ram)).font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+            Text(Fmt.mem(g.ram)).font(.system(size: 9.5)).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
             if closable, g.kind != .system, let url = closeURL {
                 Link(destination: url) {
-                    Image(systemName: "stop.circle").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Image(systemName: "stop.circle").font(.system(size: 10)).foregroundStyle(.secondary)
                 }
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var closeURL: URL? {
@@ -175,24 +180,47 @@ private struct ServerRow: View {
     }
 }
 
+/// Lista de servidores que muestra tantas filas como quepan (5, 4, 3…), sin cortarse nunca.
+private struct ServerList: View {
+    var groups: [WidgetGroup]
+    var closable = false
+    var maxRows = 5
+
+    var body: some View {
+        if groups.isEmpty {
+            Text("Nada escuchando").font(.system(size: 10)).foregroundStyle(.tertiary)
+        } else {
+            ViewThatFits(in: .vertical) {
+                ForEach((1...maxRows).reversed(), id: \.self) { n in rows(n) }
+            }
+        }
+    }
+
+    private func rows(_ n: Int) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(groups.prefix(n)) { ServerRow(g: $0, closable: closable) }
+            if groups.count > n {
+                Text("+\(groups.count - n) más").font(.system(size: 8.5)).foregroundStyle(.tertiary)
+            }
+        }
+    }
+}
+
 struct MediumView: View {
     var s: WidgetSnapshot
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                Header(s: s)
-                Metrics(s: s, compact: true)
-            }
-            .frame(width: 128)
-
             VStack(alignment: .leading, spacing: 6) {
-                Text("Servidores").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-                if s.groups.isEmpty {
-                    Text("Nada escuchando").font(.caption).foregroundStyle(.tertiary)
-                } else {
-                    ForEach(s.groups.prefix(4)) { ServerRow(g: $0) }
-                }
+                Header(s: s)
+                Metrics(s: s)
+                Spacer(minLength: 0)
+            }
+            .frame(width: 118)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Servidores").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                ServerList(groups: s.groups, maxRows: 4)
                 Spacer(minLength: 0)
             }
         }
@@ -203,59 +231,50 @@ struct LargeView: View {
     var s: WidgetSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Header(s: s)
-            HStack(alignment: .top, spacing: 10) {
-                WTile(title: "CPU", value: Fmt.pct(s.cpu), fraction: s.cpu, severity: .forCPU(s.cpu), caption: "uso total")
-                WTile(title: "Memoria", value: Fmt.pct(s.memFraction), fraction: s.memFraction, severity: s.pressure.severity,
-                     caption: "presión \(s.pressure.label.lowercased())")
+            HStack(alignment: .top, spacing: 7) {
+                WTile(title: "CPU", value: Fmt.pct(s.cpu), fraction: s.cpu, severity: .forCPU(s.cpu))
+                WTile(title: "Memoria", value: Fmt.pct(s.memFraction), fraction: s.memFraction, severity: s.pressure.severity)
                 WTile(title: "Disco", value: Fmt.disk(s.diskFree), fraction: s.diskUsedFraction,
-                     severity: .forDisk(free: s.diskFree, total: s.diskTotal), caption: "libres")
+                      severity: .forDisk(free: s.diskFree, total: s.diskTotal))
             }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Servidores").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-                if s.groups.isEmpty {
-                    Text("Nada escuchando").font(.caption).foregroundStyle(.tertiary)
-                } else {
-                    ForEach(s.groups.prefix(5)) { ServerRow(g: $0, closable: true) }
-                }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Servidores").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                ServerList(groups: s.groups, closable: true, maxRows: 6)
             }
-            Spacer(minLength: 0)
+            .frame(maxHeight: .infinity, alignment: .top)
             cleanup
         }
     }
 
     private var cleanup: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "sparkles").foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 1) {
-                if let r = s.cleanup.reclaimable {
-                    Text("~\(Fmt.disk(r)) liberables").font(.system(size: 12, weight: .semibold))
-                } else {
-                    Text("Espacio liberable sin medir").font(.system(size: 12, weight: .semibold))
-                }
-                Text(cleanupCaption).font(.system(size: 9.5)).foregroundStyle(.secondary).lineLimit(1)
+        HStack(spacing: 7) {
+            Image(systemName: "sparkles").font(.system(size: 11)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(s.cleanup.reclaimable.map { "~\(Fmt.disk($0)) liberables" } ?? "Espacio sin medir")
+                    .font(.system(size: 10.5, weight: .semibold)).lineLimit(1)
+                Text(cleanupCaption).font(.system(size: 8.5)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.85)
             }
-            Spacer()
+            Spacer(minLength: 4)
             Link(destination: URL(string: "pulso://measure")!) {
-                Text("Medir").font(.system(size: 10, weight: .medium))
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                Text("Medir").font(.system(size: 9.5, weight: .medium))
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.primary.opacity(0.1)))
             }
             Link(destination: URL(string: "pulso://clean")!) {
-                Text("Limpiar").font(.system(size: 10, weight: .semibold))
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.2)))
+                Text("Limpiar").font(.system(size: 9.5, weight: .semibold))
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.22)))
             }
         }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.06)))
     }
 
     private var cleanupCaption: String {
         if let st = s.cleanup.status { return st }
-        if let n = s.cleanup.nextRun { return "Próxima medición: \(Fmt.time(n))" }
+        if let n = s.cleanup.nextRun { return "Próxima medición \(Fmt.relative(n))" }
         if let m = s.cleanup.measuredAt { return "Medido \(Fmt.relative(m))" }
         return ""
     }
@@ -266,27 +285,19 @@ private struct WTile: View {
     var value: String
     var fraction: Double
     var severity: Severity
-    var caption: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
                 Circle().fill(severity.color).frame(width: 5, height: 5)
-                Text(title).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(title).font(.system(size: 9.5)).foregroundStyle(.secondary)
             }
-            Text(value).font(.system(size: 17, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(value).font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit()
                 .lineLimit(1).minimumScaleFactor(0.7)
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.1))
-                    Capsule().fill(severity.color).frame(width: max(4, g.size.width * min(1, fraction)))
-                }
-            }
-            .frame(height: 4)
-            if let caption { Text(caption).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1) }
+            MiniBar(fraction: fraction, color: severity.color)
         }
-        .padding(8)
+        .padding(7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.06)))
     }
 }

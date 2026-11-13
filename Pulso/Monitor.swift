@@ -332,7 +332,7 @@ final class Monitor: ObservableObject {
                 scanPorts(dockerMaxAge: 0, dockerStats: false)
             }
         case .kill(let pids):
-            guard let root = pids.first, let cl = ProcessScanner.commandLine(of: root) else {
+            guard let root = ProcessScanner.restartRoot(pids), let cl = ProcessScanner.commandLine(of: root) else {
                 toast = Toast(text: "No pude leer el comando de \(row.title)", isError: true)
                 return
             }

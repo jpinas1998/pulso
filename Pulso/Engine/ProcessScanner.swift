@@ -112,6 +112,17 @@ final class ProcessScanner: @unchecked Sendable {
         var cwd: String
     }
 
+    /// Proceso que hay que relanzar para reiniciar una fila: el primero (de padre a hijo) que no sea una shell.
+    /// Las subshells de `cmd &` conservan los argumentos del script que las creó, así que relanzarlas
+    /// repetiría el script entero. Si todos son shells (un lanzador como dev.sh), se usa el primero.
+    static func restartRoot(_ pids: [pid_t]) -> pid_t? {
+        let shells: Set<String> = ["bash", "zsh", "sh", "dash", "fish", "nohup"]
+        return pids.first { pid in
+            guard let cl = commandLine(of: pid) else { return false }
+            return !shells.contains((cl.executable as NSString).lastPathComponent)
+        } ?? pids.first
+    }
+
     static func commandLine(of pid: pid_t) -> CommandLine? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = argmax
