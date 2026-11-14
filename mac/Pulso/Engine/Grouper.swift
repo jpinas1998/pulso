@@ -125,7 +125,9 @@ final class Grouper: @unchecked Sendable {
         // --- Proyectos: anclas (procesos con puerto), envoltorios y workers ---
         let anchors = Set(projectOf.keys.filter { !(procs[$0]?.listeners.isEmpty ?? true) })
         var attached: [pid_t: pid_t] = [:]   // pid -> pid de la fila a la que pertenece
-        for a in anchors {
+        // Padres primero: si el padre también tiene el puerto (uvicorn --reload le pasa el socket al hijo),
+        // el hijo va en su fila en vez de salir repetido según el orden en que se recorra el Set.
+        for a in killOrder(Array(anchors), procs) where attached[a] == nil {
             attached[a] = a
             for d in descendants(a) where attached[d] == nil && (projectOf[d] == nil || projectOf[d] == projectOf[a]) { attached[d] = a }
         }
