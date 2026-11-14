@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.pulso" path="/org/gnome/shell/extensions/pulso/">
+    <key name="toggle-panel" type="as">
+      <default><![CDATA[['<Super><Alt>p']]]></default>
+      <summary>Atajo para abrir el panel</summary>
+    </key>
+    <key name="backend-path" type="s">
+      <default>''</default>
+      <summary>Ruta del backend (vacío: ~/.local/share/pulso/bin/pulso o «pulso» en el PATH)</summary>
+    </key>
+    <key name="show-memory" type="b">
+      <default>true</default>
+      <summary>Mostrar la memoria junto a la CPU en la barra</summary>
+    </key>
+    <key name="alerts" type="b">
+      <default>true</default>
+      <summary>Avisar de disco bajo y presión de memoria</summary>
+    </key>
+  </schema>
+</schemalist>

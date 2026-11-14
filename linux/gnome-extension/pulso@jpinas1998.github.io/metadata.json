@@ -1,0 +1,9 @@
+{
+  "uuid": "pulso@jpinas1998.github.io",
+  "name": "Pulso",
+  "description": "Monitor de desarrollo en la barra superior: CPU, memoria, disco, batería y servidores agrupados por proyecto (puertos, Docker, servicios de systemd), con opción de cerrarlos.",
+  "shell-version": ["48", "49", "50"],
+  "settings-schema": "org.gnome.shell.extensions.pulso",
+  "url": "https://github.com/jpinas1998/widget-mac",
+  "version-name": "0.1.0"
+}

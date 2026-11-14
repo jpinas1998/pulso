@@ -1,0 +1,55 @@
+/* Colores de nivel: los mismos que en el Mac (Severity.color en mac/Shared/Shared.swift) */
+
+.pulso-panel-label { padding-left: 4px; font-feature-settings: "tnum"; }
+.pulso-warn-text { color: #ffa31a; }
+.pulso-critical-text { color: #ff4d45; }
+
+.pulso-menu { min-width: 520px; }
+
+.pulso-metrics-item { padding-top: 6px; padding-bottom: 6px; }
+.pulso-metrics { spacing: 6px; }
+.pulso-metric { spacing: 10px; }
+.pulso-metric-title { min-width: 72px; font-weight: bold; }
+.pulso-metric-value { font-size: 0.9em; font-feature-settings: "tnum"; }
+
+.pulso-bar {
+    height: 6px;
+    border-radius: 3px;
+    background-color: rgba(127, 127, 127, 0.25);
+}
+.pulso-bar-fill { height: 6px; border-radius: 3px; }
+.pulso-ok { background-color: #30c778; }
+.pulso-warn { background-color: #ffa31a; }
+.pulso-critical { background-color: #ff4d45; }
+
+.pulso-dim { color: rgba(127, 127, 127, 1); font-size: 0.9em; }
+.pulso-subtitle { padding-left: 6px; }
+.pulso-num { min-width: 64px; text-align: right; font-feature-settings: "tnum"; padding-left: 6px; }
+
+.pulso-group-right { spacing: 4px; }
+.pulso-row { spacing: 6px; }
+.pulso-row-title { font-weight: bold; }
+.pulso-row-detail { max-width: 300px; font-size: 0.8em; }
+
+.pulso-port {
+    padding: 1px 6px;
+    margin: 0 2px;
+    border-radius: 99px;
+    font-size: 0.85em;
+    font-feature-settings: "tnum";
+    background-color: rgba(127, 127, 127, 0.18);
+}
+.pulso-port-http:hover { background-color: rgba(53, 132, 228, 0.35); }
+.pulso-port-exposed { border: 1px solid #ffa31a; }
+
+.pulso-icon-button { padding: 4px; border-radius: 99px; }
+.pulso-icon-button:hover { background-color: rgba(255, 77, 69, 0.25); }
+
+.pulso-actions { spacing: 6px; }
+.pulso-text-button {
+    padding: 3px 10px;
+    border-radius: 6px;
+    background-color: rgba(127, 127, 127, 0.18);
+}
+.pulso-text-button:hover { background-color: rgba(127, 127, 127, 0.32); }
+.pulso-danger { color: #ff4d45; }

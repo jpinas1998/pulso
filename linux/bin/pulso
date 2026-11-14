@@ -1,0 +1,4 @@
+#!/bin/sh
+# Lanzador del backend de Pulso. Funciona desde el repo o instalado (~/.local/share/pulso).
+DIR=$(dirname "$(readlink -f "$0")")
+PYTHONPATH="$DIR/../backend" exec python3 -P -m pulso "$@"
