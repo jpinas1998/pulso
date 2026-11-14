@@ -83,7 +83,13 @@ enum AppPaths {
     static var cleanupLog: URL { support.appendingPathComponent("ultima-limpieza.log") }
 
     static var script: String {
-        Bundle.main.path(forResource: "limpiar-mac", ofType: "sh")
-            ?? (NSHomeDirectory() + "/Documents/projects/widget-mac/scripts/limpiar-mac.sh")
+        Bundle.main.path(forResource: "limpiar-mac", ofType: "sh") ?? devScript("limpiar-mac.sh")
+    }
+
+    /// Script del repo cuando se ejecuta sin empaquetar (pruebas): el repo se llama «pulso»
+    /// (antes «widget-mac», que se sigue aceptando para clones antiguos).
+    static func devScript(_ name: String) -> String {
+        let candidates = ["pulso", "widget-mac"].map { NSHomeDirectory() + "/Documents/projects/\($0)/mac/scripts/\(name)" }
+        return candidates.first { FileManager.default.fileExists(atPath: $0) } ?? candidates[0]
     }
 }

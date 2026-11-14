@@ -112,8 +112,7 @@ final class DiskAnalyzer: ObservableObject {
         running = true
         progress = "Empezando…"
         partial = DiskReport(date: Date())
-        let script = Bundle.main.path(forResource: "analizar-disco", ofType: "sh")
-            ?? (NSHomeDirectory() + "/Documents/projects/widget-mac/scripts/analizar-disco.sh")
+        let script = Bundle.main.path(forResource: "analizar-disco", ofType: "sh") ?? AppPaths.devScript("analizar-disco.sh")
         do {
             proc = try Subprocess.launch("/usr/sbin/taskpolicy", ["-b", "/bin/bash", script], env: ShellEnv.userEnvironment,
                                          onLine: { [weak self] l in Task { @MainActor in self?.handle(l) } },

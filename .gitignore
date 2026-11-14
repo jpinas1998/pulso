@@ -1,5 +1,5 @@
-build/
-*.xcodeproj/
-Pulso/Info.plist
-PulsoWidget/Info.plist
 .DS_Store
+__pycache__/
+*.pyc
+linux/build/
+linux/gnome-extension/*/schemas/gschemas.compiled
