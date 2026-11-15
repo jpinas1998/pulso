@@ -34,6 +34,8 @@ class Proc:
     name: str
     uid: int
     start: int                 # ticks desde el arranque (identifica el proceso aunque se reutilice el pid)
+    tty: int = 0               # terminal de control (0 = ninguna)
+    cpu_seconds: float = 0.0   # CPU acumulada, incluida la de sus hijos ya terminados
     path: str = ""
     cwd: str | None = None
     footprint: int | None = None
@@ -89,7 +91,9 @@ def _stat(pid):
         s = f.read()
     l, r = s.index("("), s.rindex(")")
     rest = s[r + 2:].split()
-    return s[l + 1:r], int(rest[1]), int(rest[11]) + int(rest[12]), int(rest[19])
+    # nombre, ppid, ticks de CPU (propios + hijos ya terminados), inicio, terminal
+    return (s[l + 1:r], int(rest[1]), int(rest[11]) + int(rest[12]), int(rest[19]), int(rest[4]),
+            int(rest[13]) + int(rest[14]))
 
 
 class ProcessScanner:
@@ -107,13 +111,13 @@ class ProcessScanner:
                 continue
             pid = int(entry.name)
             try:
-                name, ppid, ticks, start = _stat(pid)
+                name, ppid, ticks, start, tty, child_ticks = _stat(pid)
                 uid = entry.stat().st_uid
             except (OSError, ValueError, IndexError):
                 continue
             if pid == 2 or ppid == 2:      # hilos del kernel
                 continue
-            p = Proc(pid, ppid, name, uid, start)
+            p = Proc(pid, ppid, name, uid, start, tty=tty, cpu_seconds=(ticks + child_ticks) / CLK)
             try:
                 with open(f"/proc/{pid}/statm") as f:
                     v = f.read().split()
@@ -224,6 +228,35 @@ def attach_listeners(procs, include_udp=True):
         if ino not in found:
             orphans.setdefault(uid, []).append(l)
     return {uid: _merge(ls) for uid, ls in orphans.items()}
+
+
+def read_environ(pid):
+    """Entorno de un proceso tuyo (para relanzarlo igual). None si no se puede leer."""
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as f:
+            raw = f.read()
+    except OSError:
+        return None
+    env = {}
+    for item in raw.split(b"\0"):
+        k, sep, v = item.partition(b"=")
+        if sep and k:
+            env[k.decode(errors="replace")] = v.decode(errors="replace")
+    return env
+
+
+def command_line(pid):
+    """(args, cwd, env) de un proceso tuyo, o None."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            args = [a.decode(errors="replace") for a in f.read().split(b"\0") if a]
+        cwd = os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return None
+    env = read_environ(pid)
+    if not args or env is None:
+        return None
+    return args, cwd, env
 
 
 def owner_of(uid, procs):
