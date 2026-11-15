@@ -4,33 +4,59 @@
 .pulso-warn-text { color: #ffa31a; }
 .pulso-critical-text { color: #ff4d45; }
 
-.pulso-menu { min-width: 520px; }
+.pulso-menu { width: 600px; }   /* fijo: si no, cada pestaña lo ensancha a su manera */
 
-.pulso-metrics-item { padding-top: 6px; padding-bottom: 6px; }
+/* Métricas e historial */
+.pulso-metrics-item { padding-top: 6px; padding-bottom: 4px; }
 .pulso-metrics { spacing: 6px; }
 .pulso-metric { spacing: 10px; }
 .pulso-metric-title { min-width: 72px; font-weight: bold; }
 .pulso-metric-value { font-size: 0.9em; font-feature-settings: "tnum"; }
 
-.pulso-bar {
-    height: 6px;
-    border-radius: 3px;
-    background-color: rgba(127, 127, 127, 0.25);
-}
+.pulso-bar { height: 6px; border-radius: 3px; background-color: rgba(127, 127, 127, 0.25); }
 .pulso-bar-fill { height: 6px; border-radius: 3px; }
 .pulso-ok { background-color: #30c778; }
 .pulso-warn { background-color: #ffa31a; }
 .pulso-critical { background-color: #ff4d45; }
 
+.pulso-chart-head { spacing: 4px; padding-top: 4px; }
+.pulso-chart { min-height: 54px; margin-top: 2px; }
+.pulso-legend { font-size: 0.8em; }
+.pulso-span { padding: 1px 8px; font-size: 0.85em; }
+.pulso-span-active { background-color: rgba(53, 132, 228, 0.35); }
+
+/* Pestañas */
+.pulso-tabs-item { padding-top: 2px; padding-bottom: 2px; }
+.pulso-tabs { spacing: 4px; }
+.pulso-tab {
+    padding: 5px 8px;
+    border-radius: 8px;
+    font-weight: bold;
+    color: rgba(127, 127, 127, 1);
+}
+.pulso-tab:hover { background-color: rgba(127, 127, 127, 0.15); }
+.pulso-tab-active { background-color: rgba(127, 127, 127, 0.25); color: inherit; }
+
+.pulso-scroll { max-height: 560px; }
+
+/* Texto */
 .pulso-dim { color: rgba(127, 127, 127, 1); font-size: 0.9em; }
+.pulso-strong { font-weight: bold; }
 .pulso-subtitle { padding-left: 6px; }
 .pulso-num { min-width: 64px; text-align: right; font-feature-settings: "tnum"; padding-left: 6px; }
+.pulso-heading-item { padding-top: 8px; padding-bottom: 2px; }
+.pulso-heading { spacing: 6px; }
+.pulso-heading-text { font-weight: bold; font-size: 0.85em; color: rgba(127, 127, 127, 1); }
 
+/* Filas */
 .pulso-group-right { spacing: 4px; }
 .pulso-row { spacing: 6px; }
 .pulso-row-title { font-weight: bold; }
-.pulso-row-detail { max-width: 300px; font-size: 0.8em; }
+.pulso-row-detail { max-width: 320px; font-size: 0.8em; }
+.pulso-run .pulso-row-title { font-weight: normal; }
+.pulso-candidate .pulso-row-title { color: #ffa31a; }
 
+/* Puertos */
 .pulso-port {
     padding: 1px 6px;
     margin: 0 2px;
@@ -39,12 +65,15 @@
     font-feature-settings: "tnum";
     background-color: rgba(127, 127, 127, 0.18);
 }
+.pulso-port-inner { spacing: 4px; }
 .pulso-port-http:hover { background-color: rgba(53, 132, 228, 0.35); }
 .pulso-port-exposed { border: 1px solid #ffa31a; }
+.pulso-dot { width: 6px; height: 6px; border-radius: 3px; }
 
+/* Botones */
 .pulso-icon-button { padding: 4px; border-radius: 99px; }
-.pulso-icon-button:hover { background-color: rgba(255, 77, 69, 0.25); }
-
+.pulso-icon-button:hover { background-color: rgba(127, 127, 127, 0.25); }
+.pulso-close:hover { background-color: rgba(255, 77, 69, 0.25); }
 .pulso-actions { spacing: 6px; }
 .pulso-text-button {
     padding: 3px 10px;
@@ -53,3 +82,6 @@
 }
 .pulso-text-button:hover { background-color: rgba(127, 127, 127, 0.32); }
 .pulso-danger { color: #ff4d45; }
+.pulso-armed { background-color: rgba(255, 77, 69, 0.85); color: white; border-radius: 6px; padding: 3px 8px; }
+
+.pulso-footer { padding-top: 2px; padding-bottom: 2px; }

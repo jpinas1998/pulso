@@ -15,14 +15,19 @@ Hay una versión por sistema, cada una nativa del suyo:
 | Atajo | ⌥⌘P | Super+Alt+P |
 | Instrucciones | [mac/README.md](mac/README.md) | [linux/README.md](linux/README.md) |
 
+Las dos tienen las mismas pestañas (Servidores, Procesos, Espacio, Worktrees), historial, perfiles de
+arranque, reinicio de servidores, salud HTTP y los mismos avisos. Linux no tiene energía ni red por
+proceso (no se pueden leer sin root) ni widget de escritorio (GNOME en Wayland no los tiene).
+
 ## Estructura
 
 ```
 mac/      App de macOS (proyecto XcodeGen, widget, scripts de limpieza, pruebas y herramientas)
 linux/    Pulso para Linux
-  backend/          pulso: lee /proc y emite instantáneas JSON (también se usa desde la terminal)
-  gnome-extension/  indicador y panel de GNOME Shell, que habla con el backend
-  tests/            pruebas (unitarias y con un servidor de prueba real)
+  backend/          pulso: lee /proc, agrupa, limpia, vigila… y habla JSON con la extensión (también CLI)
+  gnome-extension/  indicador, panel con pestañas y ajustes de GNOME Shell
+  scripts/          limpiar-linux.sh (equivalente a mac/scripts/limpiar-mac.sh)
+  tests/            pruebas: unitarias, con servidores reales y la extensión en un GNOME Shell sin pantalla
 ```
 
 Las dos versiones comparten diseño, no código: la lógica de agrupar por proyecto

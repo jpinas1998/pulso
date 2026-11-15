@@ -33,10 +33,11 @@ if [[ "${1:-}" == "--dev" ]]; then
   echo "==> Enlazando al repo (modo desarrollo)"
   ln -s "$PWD/backend" "$APP_DIR/backend"
   ln -s "$PWD/bin" "$APP_DIR/bin"
+  ln -s "$PWD/scripts" "$APP_DIR/scripts"
   ln -s "$PWD/gnome-extension/$UUID" "$EXT_DIR"
 else
   echo "==> Copiando backend a $APP_DIR"
-  cp -r backend bin "$APP_DIR/"
+  cp -r backend bin scripts "$APP_DIR/"
   find "$APP_DIR" -name __pycache__ -prune -exec rm -rf {} +
   echo "==> Copiando extensión a $EXT_DIR"
   cp -r "gnome-extension/$UUID" "$EXT_DIR"

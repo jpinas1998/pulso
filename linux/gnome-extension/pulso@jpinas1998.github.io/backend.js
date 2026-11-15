@@ -1,13 +1,17 @@
-// Proceso del backend (`pulso serve`): lee instantáneas JSON línea a línea y le manda órdenes.
+// Proceso del backend (`pulso serve`): lee sus mensajes JSON línea a línea y le manda órdenes.
+// Si se reinicia, al arrancar vuelve a mandar todo su estado; la extensión reenvía los ajustes.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 export class Backend {
-    constructor(path, {onSnapshot, onResult, onError}) {
+    constructor(path, {onSnapshot, onState, onResult, onAlert, onError, onRestart}) {
         this._path = path;
         this._onSnapshot = onSnapshot;
+        this._onState = onState;
         this._onResult = onResult;
+        this._onAlert = onAlert;
+        this._onRestart = onRestart;
         this._onError = onError;
         this._failures = 0;
         this._restartId = 0;
@@ -42,6 +46,8 @@ export class Backend {
             this._restartId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2 ** this._failures, () => {
                 this._restartId = 0;
                 this._start();
+                if (this._proc)
+                    this._onRestart?.();   // el backend nuevo no conoce los ajustes
                 return GLib.SOURCE_REMOVE;
             });
         });
@@ -64,8 +70,12 @@ export class Backend {
                 if (msg.type === 'snapshot') {
                     this._failures = 0;
                     this._onSnapshot(msg);
+                } else if (msg.type === 'state') {
+                    this._onState(msg);
                 } else if (msg.type === 'result') {
                     this._onResult(msg);
+                } else if (msg.type === 'alert') {
+                    this._onAlert(msg);
                 }
             } catch (e) {
                 logError(e, 'Pulso: línea del backend no válida');

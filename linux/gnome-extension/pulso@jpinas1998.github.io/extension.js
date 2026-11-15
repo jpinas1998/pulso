@@ -1,4 +1,4 @@
-// Pulso para GNOME Shell: indicador en la barra superior + panel desplegable.
+// Pulso para GNOME Shell: indicador en la barra superior + panel con pestañas.
 // Los datos los da el backend (`pulso serve`, en linux/backend); aquí solo hay interfaz.
 
 import Clutter from 'gi://Clutter';
@@ -10,75 +10,40 @@ import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as MessageTray from 'resource:///org/gnome/shell/ui/messageTray.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {Backend} from './backend.js';
 import * as F from './format.js';
+import * as U from './ui.js';
+import {ServersTab} from './servers.js';
+import {ProcessesTab} from './processes.js';
+import {SpaceTab} from './space.js';
+import {WorktreesTab} from './worktrees.js';
 
-const BAR_WIDTH = 150;
-const MAX_PORT_CHIPS = 4;
+const TABS = [
+    {id: 'servers', label: 'Servidores'},
+    {id: 'processes', label: 'Procesos'},
+    {id: 'space', label: 'Espacio'},
+    {id: 'worktrees', label: 'Worktrees'},
+];
+const SPANS = {day: [86400, '24 h'], week: [7 * 86400, '7 días'], month: [30 * 86400, '30 días']};
 
-// ---------------------------------------------------------------- piezas
-
-/** Fila de métrica: nombre, barra y valor. */
-const MetricRow = GObject.registerClass(
-class MetricRow extends St.BoxLayout {
-    _init(title) {
-        super._init({style_class: 'pulso-metric', x_expand: true});
-        this._title = new St.Label({text: title, style_class: 'pulso-metric-title', y_align: Clutter.ActorAlign.CENTER});
-        this._track = new St.Widget({style_class: 'pulso-bar', width: BAR_WIDTH, y_align: Clutter.ActorAlign.CENTER});
-        this._fill = new St.Widget({style_class: 'pulso-bar-fill'});
-        this._track.add_child(this._fill);
-        this._value = new St.Label({style_class: 'pulso-metric-value', x_expand: true, y_align: Clutter.ActorAlign.CENTER});
-        this._value.clutter_text.ellipsize = 3; // Pango.EllipsizeMode.END
-        this.add_child(this._title);
-        this.add_child(this._track);
-        this.add_child(this._value);
-    }
-
-    set(title, fraction, value, severity) {
-        if (title)
-            this._title.text = title;
-        const f = Math.max(0, Math.min(1, fraction ?? 0));
-        this._fill.set_size(Math.round(BAR_WIDTH * f), 6);
-        for (const s of ['ok', 'warn', 'critical'])
-            this._fill.remove_style_class_name(`pulso-${s}`);
-        this._fill.add_style_class_name(`pulso-${severity ?? 'ok'}`);
-        this._value.text = value;
-    }
-});
-
-function portChip(port, onOpen) {
-    const label = `${port.port}${port.proto === 'UDP' ? '/udp' : ''}`;
-    const chip = new St.Button({
-        label,
-        style_class: `pulso-port${port.exposed ? ' pulso-port-exposed' : ''}${port.http ? ' pulso-port-http' : ''}`,
-        reactive: !!port.http,
-        can_focus: !!port.http,
-        y_align: Clutter.ActorAlign.CENTER,
-    });
-    if (port.exposed)
-        chip.accessible_name = `${label}, accesible desde la red`;
-    if (port.http)
-        chip.connect('clicked', () => onOpen(`http://localhost:${port.port}`));
-    return chip;
-}
-
-function iconButton(iconName, accessibleName, onClick) {
-    const b = new St.Button({
-        style_class: 'pulso-icon-button',
-        child: new St.Icon({icon_name: iconName, icon_size: 14}),
-        accessible_name: accessibleName,
-        can_focus: true,
-        y_align: Clutter.ActorAlign.CENTER,
-    });
-    b.connect('clicked', onClick);
-    return b;
-}
-
-// ---------------------------------------------------------------- indicador
+// Ajuste de GSettings → clave de configuración del backend (server.CONFIG_DEFAULTS)
+const CONFIG_KEYS = {
+    'health-checks': ['healthChecks', 'b'], 'show-udp': ['udp', 'b'], 'project-roots': ['projectRoots', 'as'],
+    'alert-cpu': ['alertCPU', 'b'], 'alert-cpu-percent': ['alertCPUPercent', 'i'], 'alert-cpu-minutes': ['alertCPUMinutes', 'i'],
+    'alert-pressure': ['alertPressure', 'b'], 'alert-swap': ['alertSwap', 'b'], 'alert-swap-gb': ['alertSwapGB', 'i'],
+    'alert-disk': ['alertDisk', 'b'], 'alert-disk-gb': ['alertDiskGB', 'i'], 'alert-server-down': ['alertServerDown', 'b'],
+    'alert-new-port': ['alertNewPort', 'b'], 'alert-idle-projects': ['alertIdleProjects', 'b'],
+    'idle-project-minutes': ['idleProjectMinutes', 'i'], 'alert-long-tasks': ['alertLongTasks', 'b'],
+    'long-task-minutes': ['longTaskMinutes', 'i'], 'alert-cleanup': ['alertCleanup', 'b'],
+    'auto-measure': ['autoMeasure', 'b'], 'measure-every-hours': ['measureEveryHours', 'i'],
+    'idle-avg-cpu': ['idleAvgCPU', 'i'], 'idle-now-cpu': ['idleNowCPU', 'i'], 'retry-minutes': ['retryMinutes', 'i'],
+    'abort-cpu': ['abortCPU', 'i'],
+};
 
 const PulsoIndicator = GObject.registerClass(
 class PulsoIndicator extends PanelMenu.Button {
@@ -87,9 +52,8 @@ class PulsoIndicator extends PanelMenu.Button {
         this._ext = ext;
         this._settings = ext.getSettings();
         this._snap = null;
-        this._groupsSig = '';
-        this._rowLabels = new Map();   // id de fila/grupo → {ram, cpu}
-        this._alerted = {};
+        this._state = {};
+        this._pending = new Map();
 
         const box = new St.BoxLayout({style_class: 'panel-status-menu-box'});
         box.add_child(new St.Icon({icon_name: 'utilities-system-monitor-symbolic', style_class: 'system-status-icon'}));
@@ -102,18 +66,26 @@ class PulsoIndicator extends PanelMenu.Button {
 
         this.menu.connect('open-state-changed', (_m, open) => {
             this._backend?.send({cmd: 'live', on: open});
-            if (open)
-                this._updateFooter();
+            if (open) {
+                this._renderAll();
+                this._chart.queue_repaint();
+            }
         });
 
         this._backend = new Backend(this._backendPath(), {
             onSnapshot: s => this._onSnapshot(s),
+            onState: s => this._onState(s),
             onResult: r => this._onResult(r),
+            onAlert: a => this._notify(a.title, a.body),
+            onRestart: () => this._sendConfig(),
             onError: msg => {
                 this._panelLabel.text = '!';
-                this._status.label.text = msg;
+                this._status.text = msg;
             },
         });
+        this._sendConfig();
+        for (const key of Object.keys(CONFIG_KEYS))
+            this._settings.connectObject(`changed::${key}`, () => this._sendConfig(), this);
         this._settings.connectObject('changed::show-memory', () => this._updatePanel(), this);
     }
 
@@ -127,36 +99,152 @@ class PulsoIndicator extends PanelMenu.Button {
         return GLib.find_program_in_path('pulso') ?? installed;
     }
 
+    _sendConfig() {
+        const cfg = {cmd: 'config'};
+        for (const [key, [name, type]] of Object.entries(CONFIG_KEYS))
+            cfg[name] = type === 'b' ? this._settings.get_boolean(key) : type === 'i' ? this._settings.get_int(key) : this._settings.get_strv(key);
+        this._backend?.send(cfg);
+    }
+
     // ------------------------------------------------------------ menú
 
     _buildMenu() {
-        const metrics = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false, style_class: 'pulso-metrics-item'});
-        const col = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'pulso-metrics'});
-        this._cpuRow = new MetricRow('CPU');
-        this._memRow = new MetricRow('Memoria');
-        this._swapRow = new MetricRow('Swap');
-        this._diskBox = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_expand: true});
-        this._batRow = new MetricRow('Batería');
+        // Métricas (siempre visibles)
+        const col = U.vbox({x_expand: true, style_class: 'pulso-metrics'});
+        this._cpuRow = new U.MetricRow('CPU');
+        this._memRow = new U.MetricRow('Memoria');
+        this._swapRow = new U.MetricRow('Swap');
+        this._diskBox = U.vbox({x_expand: true});
+        this._batRow = new U.MetricRow('Batería');
         for (const w of [this._cpuRow, this._memRow, this._swapRow, this._diskBox, this._batRow])
             col.add_child(w);
-        metrics.add_child(col);
-        this.menu.addMenuItem(metrics);
 
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem('Servidores'));
-        this._groupsSection = new PopupMenu.PopupMenuSection();
-        this.menu.addMenuItem(this._groupsSection);
+        // Historial
+        const chartHead = U.hbox({x_expand: true, style_class: 'pulso-chart-head'});
+        chartHead.add_child(U.label('Historial', 'pulso-metric-title', {x_expand: true}));
+        this._spanButtons = {};
+        for (const [id, [, text]] of Object.entries(SPANS)) {
+            const b = U.textButton(text, () => {
+                this._settings.set_string('history-span', id);
+                this._updateHistory();
+            }, 'pulso-span');
+            this._spanButtons[id] = b;
+            chartHead.add_child(b);
+        }
+        col.add_child(chartHead);
+        this._chart = new U.HistoryChart();
+        col.add_child(this._chart);
+        this._chartLegend = U.label('', 'pulso-dim pulso-legend');
+        col.add_child(this._chartLegend);
+        this.menu.addMenuItem(U.staticItem(col, 'pulso-metrics-item'));
 
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem('Lo que más consume'));
-        this._topSection = new PopupMenu.PopupMenuSection();
-        this.menu.addMenuItem(this._topSection);
+        // Pestañas
+        const tabs = U.hbox({x_expand: true, style_class: 'pulso-tabs'});
+        this._tabButtons = {};
+        for (const t of TABS) {
+            const b = new St.Button({label: t.label, style_class: 'pulso-tab', can_focus: true, x_expand: true});
+            b.connect('clicked', () => this._selectTab(t.id));
+            this._tabButtons[t.id] = b;
+            tabs.add_child(b);
+        }
+        this.menu.addMenuItem(U.staticItem(tabs, 'pulso-tabs-item'));
 
+        // Contenido de las pestañas, con desplazamiento. La sección se añade al menú (para que sus
+        // elementos se comporten como cualquier otro: activar, submenús, teclado) y luego su actor se
+        // mueve dentro de un ScrollView.
+        this._content = new PopupMenu.PopupMenuSection();
+        this.menu.addMenuItem(this._content);
+        this.menu.box.remove_child(this._content.actor);
+        const scroll = new St.ScrollView({style_class: 'pulso-scroll', hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC, overlay_scrollbars: true, x_expand: true});
+        scroll.set_child(this._content.actor);
+        const holder = new PopupMenu.PopupMenuSection();
+        holder.actor.add_child(scroll);
+        this.menu.addMenuItem(holder);
+
+        const ctx = {
+            run: (actions, label) => this._run(actions, label),
+            openUri: uri => this._openUri(uri),
+            notify: (title, body) => this._notify(title, body),
+            closeMenu: () => this.menu.close(),
+            settings: this._settings,
+            state: () => this._state,
+            forgotten: groups => {
+                const limit = this._settings.get_int('idle-project-minutes');
+                return groups.filter(g => (g.kind === 'project' || g.kind === 'docker') && (g.idleMinutes ?? 0) >= limit && g.canCloseAll)
+                    .sort((a, b) => b.ram - a.ram);
+            },
+            focusTargets: group => (this._snap?.groups ?? []).filter(g => (g.kind === 'project' || g.kind === 'docker') &&
+                g.id !== group.id && g.canCloseAll),
+        };
+        this._tabSections = {};
+        for (const t of TABS) {
+            const sec = new PopupMenu.PopupMenuSection();
+            this._content.addMenuItem(sec);
+            this._tabSections[t.id] = sec;
+        }
+        this._tabs = {
+            servers: new ServersTab(this._tabSections.servers, ctx),
+            processes: new ProcessesTab(this._tabSections.processes, ctx),
+            space: new SpaceTab(this._tabSections.space, ctx),
+            worktrees: new WorktreesTab(this._tabSections.worktrees, ctx),
+        };
+        this._selectTab(this._settings.get_string('panel-tab'), false);
+
+        // Pie
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        this._status = new PopupMenu.PopupMenuItem('Arrancando…', {reactive: false, can_focus: false});
-        this._status.label.add_style_class_name('pulso-dim');
-        const refresh = iconButton('view-refresh-symbolic', 'Actualizar', () => this._backend?.send({cmd: 'refresh'}));
-        this._status.add_child(refresh);
-        this.menu.addMenuItem(this._status);
+        const foot = U.hbox({x_expand: true});
+        this._status = U.label('Arrancando…', 'pulso-dim', {x_expand: true});
+        foot.add_child(this._status);
+        foot.add_child(U.iconButton('view-refresh-symbolic', 'Actualizar', () => {
+            this._backend?.send({cmd: 'refresh'});
+            this._run([{kind: 'health-check'}]);
+        }));
+        foot.add_child(U.iconButton('emblem-system-symbolic', 'Ajustes de Pulso', () => {
+            this.menu.close();
+            this._ext.openPreferences();
+        }));
+        this.menu.addMenuItem(U.staticItem(foot, 'pulso-footer'));
     }
+
+    _selectTab(id, render = true) {
+        if (!this._tabSections[id])
+            id = 'servers';
+        this._tab = id;
+        this._settings.set_string('panel-tab', id);
+        for (const t of TABS) {
+            this._tabSections[t.id].actor.visible = t.id === id;
+            this._tabButtons[t.id][t.id === id ? 'add_style_class_name' : 'remove_style_class_name']('pulso-tab-active');
+        }
+        if (render)
+            this._renderTab(id);
+    }
+
+    _renderTab(id) {
+        if (!this._snap)
+            return;
+        try {
+            if (id === 'servers')
+                this._tabs.servers.update(this._snap, this._state);
+            else if (id === 'processes')
+                this._tabs.processes.update(this._snap);
+            else if (id === 'space')
+                this._tabs.space.update(this._state);
+            else if (id === 'worktrees')
+                this._tabs.worktrees.update(this._state);
+        } catch (e) {
+            logError(e, `Pulso: error pintando la pestaña ${id}`);
+        }
+    }
+
+    _renderAll() {
+        this._updateMetrics();
+        this._updateHistory();
+        this._renderTab(this._tab);
+        this._updateFooter();
+    }
+
+    // ------------------------------------------------------------ datos
 
     _onSnapshot(s) {
         // Las lecturas ligeras (panel cerrado) no traen procesos: se conservan los últimos.
@@ -167,13 +255,23 @@ class PulsoIndicator extends PanelMenu.Button {
         }
         this._snap = s;
         this._updatePanel();
-        this._updateMetrics();
-        if (s.full) {
-            this._updateGroups();
-            this._updateTop();
-        }
-        this._updateFooter();
-        this._checkAlerts();
+        if (this.menu.isOpen)
+            this._renderAll();
+    }
+
+    _onState(s) {
+        delete s.type;
+        Object.assign(this._state, s);
+        if (!this.menu.isOpen)
+            return;
+        if ('history' in s)
+            this._updateHistory();
+        if ('profiles' in s && this._tab === 'servers')
+            this._renderTab('servers');
+        if (('space' in s || 'cleanup' in s) && this._tab === 'space')
+            this._renderTab('space');
+        if (('worktrees' in s || 'space' in s) && this._tab === 'worktrees')
+            this._renderTab('worktrees');
     }
 
     _updatePanel() {
@@ -193,22 +291,26 @@ class PulsoIndicator extends PanelMenu.Button {
 
     _updateMetrics() {
         const s = this._snap;
+        if (!s)
+            return;
         const m = s.memory;
-        this._cpuRow.set(null, s.cpu.usage, `${F.pct(s.cpu.usage)} · carga ${s.cpu.load[0].toFixed(2)} · ${s.cpu.cores} núcleos`,
+        const avg = s.cpu.avg10 != null ? ` · media 10 min ${F.pct(s.cpu.avg10)}` : '';
+        this._cpuRow.set(null, s.cpu.usage, `${F.pct(s.cpu.usage)}${avg} · carga ${s.cpu.load[0].toFixed(2)} · ${s.cpu.cores} núcleos`,
             F.cpuSeverity(s.cpu.usage));
         this._memRow.set(null, m.used / m.total, `${F.bytes(m.used)} de ${F.bytes(m.total)} · presión ${F.pressureLabel(m.pressure)}`,
             F.pressureSeverity(m.pressure));
         this._swapRow.visible = m.swapTotal > 0;
-        if (m.swapTotal > 0)
+        if (m.swapTotal > 0) {
             this._swapRow.set(null, m.swapUsed / m.swapTotal, `${F.bytes(m.swapUsed)} de ${F.bytes(m.swapTotal)}`,
                 m.swapUsed / m.swapTotal > 0.5 ? 'warn' : 'ok');
+        }
 
         // Discos: se recrean solo si cambia la lista de volúmenes
         const sig = s.disks.map(d => d.mount).join('|');
         if (sig !== this._diskSig) {
             this._diskSig = sig;
             this._diskBox.destroy_all_children();
-            this._diskRows = s.disks.map(() => new MetricRow('Disco'));
+            this._diskRows = s.disks.map(() => new U.MetricRow('Disco'));
             for (const r of this._diskRows)
                 this._diskBox.add_child(r);
         }
@@ -226,165 +328,19 @@ class PulsoIndicator extends PanelMenu.Button {
                 parts.push(`${b.watts} W`);
             if (b.health)
                 parts.push(`salud ${Math.round(b.health * 100)} %`);
+            if (b.cycles)
+                parts.push(`${b.cycles} ciclos`);
             this._batRow.set(null, b.percent / 100, parts.join(' · '), b.percent <= 10 && b.status === 'Discharging' ? 'critical' : 'ok');
         }
     }
 
-    // ------------------------------------------------------------ servidores
-
-    _updateGroups() {
-        const groups = this._snap.groups ?? [];
-        // Si no cambia la estructura (filas y puertos) solo se actualizan RAM y CPU, para que el
-        // menú no parpadee ni se cierren los submenús abiertos cada 2 s.
-        const sig = groups.map(g => `${g.id}[${g.rows.map(r => `${r.id}:${r.ports.map(p => p.port).join(',')}`).join(';')}]`).join('|');
-        if (sig === this._groupsSig) {
-            for (const g of groups) {
-                const gl = this._rowLabels.get(g.id);
-                if (gl)
-                    gl.ram.text = F.bytes(g.ram);
-                for (const r of g.rows) {
-                    const l = this._rowLabels.get(r.id);
-                    if (l) {
-                        l.ram.text = r.ram ? F.bytes(r.ram) : '';
-                        l.cpu.text = r.cpu != null ? F.pct(r.cpu, 1) : '';
-                    }
-                }
-            }
-            return;
-        }
-        this._groupsSig = sig;
-        const open = new Set([...this._groupItems ?? []].filter(([, it]) => it.menu.isOpen).map(([id]) => id));
-        this._groupsSection.removeAll();
-        this._rowLabels.clear();
-        this._groupItems = new Map();
-
-        if (!groups.length) {
-            this._groupsSection.addMenuItem(new PopupMenu.PopupMenuItem('Nada escuchando en ningún puerto', {reactive: false}));
-            return;
-        }
-        for (const g of groups) {
-            const item = this._groupItem(g);
-            this._groupItems.set(g.id, item);
-            this._groupsSection.addMenuItem(item);
-            if (open.has(g.id))
-                item.menu.open(false);
-        }
-    }
-
-    _groupItem(g) {
-        const item = new PopupMenu.PopupSubMenuMenuItem(g.name, g.kind === 'project');
-        if (g.kind === 'project')
-            item.icon.icon_name = 'folder-symbolic';
-        else
-            item.icon?.destroy?.();
-        item.add_style_class_name(`pulso-group pulso-group-${g.kind}`);
-        if (g.subtitle) {
-            const sub = new St.Label({text: g.subtitle, style_class: 'pulso-dim pulso-subtitle', y_align: Clutter.ActorAlign.CENTER});
-            item.insert_child_above(sub, item.label);
-        }
-        const right = new St.BoxLayout({style_class: 'pulso-group-right', x_expand: true, x_align: Clutter.ActorAlign.END});
-        const ports = g.ports.slice(0, MAX_PORT_CHIPS);
-        for (const p of ports)
-            right.add_child(portChip(p, uri => this._openUri(uri)));
-        if (g.ports.length > MAX_PORT_CHIPS)
-            right.add_child(new St.Label({text: `+${g.ports.length - MAX_PORT_CHIPS}`, style_class: 'pulso-dim', y_align: Clutter.ActorAlign.CENTER}));
-        const ram = new St.Label({text: F.bytes(g.ram), style_class: 'pulso-num', y_align: Clutter.ActorAlign.CENTER});
-        right.add_child(ram);
-        item.insert_child_below(right, item.get_last_child());
-        this._rowLabels.set(g.id, {ram});
-
-        for (const r of g.rows)
-            item.menu.addMenuItem(this._rowItem(g, r));
-
-        // Acciones del grupo
-        if (g.path) {
-            const actions = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false, style_class: 'pulso-group-actions'});
-            const box = new St.BoxLayout({x_expand: true, style_class: 'pulso-actions'});
-            box.add_child(this._textButton('Carpeta', () => this._openUri(Gio.File.new_for_path(g.path).get_uri())));
-            box.add_child(this._textButton('Terminal', () => F.openTerminal(g.path)));
-            if (F.editor())
-                box.add_child(this._textButton(F.editor().label, () => F.openInEditor(g.path)));
-            actions.add_child(box);
-            item.menu.addMenuItem(actions);
-        }
-        if (g.canCloseAll && g.rows.filter(r => !r.protected).length > 1) {
-            const closeAll = new PopupMenu.PopupMenuItem(`Cerrar todo ${g.kind === 'project' ? 'el proyecto' : 'el grupo'}`);
-            closeAll.add_style_class_name('pulso-danger');
-            closeAll.connect('activate', () => this._run(g.rows.filter(r => !r.protected).map(r => r.action), g.name));
-            item.menu.addMenuItem(closeAll);
-        }
-        return item;
-    }
-
-    _rowItem(g, r) {
-        const it = new PopupMenu.PopupBaseMenuItem({style_class: 'pulso-row'});
-        const text = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_expand: true});
-        const title = new St.Label({text: r.title, style_class: 'pulso-row-title'});
-        title.clutter_text.ellipsize = 3;
-        const detail = new St.Label({text: r.detail ?? '', style_class: 'pulso-dim pulso-row-detail'});
-        detail.clutter_text.ellipsize = 2; // en medio: se ve el principio y el final del comando
-        text.add_child(title);
-        text.add_child(detail);
-        it.add_child(text);
-
-        const ports = new St.BoxLayout({y_align: Clutter.ActorAlign.CENTER});
-        for (const p of r.ports.slice(0, MAX_PORT_CHIPS))
-            ports.add_child(portChip(p, uri => this._openUri(uri)));
-        if (r.ports.length > MAX_PORT_CHIPS)
-            ports.add_child(new St.Label({text: `+${r.ports.length - MAX_PORT_CHIPS}`, style_class: 'pulso-dim', y_align: Clutter.ActorAlign.CENTER}));
-        it.add_child(ports);
-
-        const cpu = new St.Label({text: r.cpu != null ? F.pct(r.cpu, 1) : '', style_class: 'pulso-num pulso-dim', y_align: Clutter.ActorAlign.CENTER});
-        const ram = new St.Label({text: r.ram ? F.bytes(r.ram) : '', style_class: 'pulso-num', y_align: Clutter.ActorAlign.CENTER});
-        it.add_child(cpu);
-        it.add_child(ram);
-        this._rowLabels.set(r.id, {ram, cpu});
-
-        if (!r.protected && r.action?.kind !== 'none') {
-            const label = r.action.kind === 'docker-stop' ? 'Parar contenedor'
-                : r.action.kind === 'unit-stop' ? `Parar ${r.action.unit}` : 'Cerrar';
-            it.add_child(iconButton(r.needsAdmin ? 'changes-prevent-symbolic' : 'window-close-symbolic', label,
-                () => this._run([r.action], r.title)));
-        }
-        // Clic en la fila: copia el comando (para relanzarlo a mano)
-        it.connect('activate', () => {
-            const cmd = r.cwd ? `cd ${GLib.shell_quote(r.cwd)} && ${r.detail}` : r.detail;
-            St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, cmd);
-            Main.notify('Pulso', `Comando de «${r.title}» copiado`);
-        });
-        return it;
-    }
-
-    _textButton(label, onClick) {
-        const b = new St.Button({label, style_class: 'pulso-text-button', can_focus: true});
-        b.connect('clicked', () => {
-            onClick();
-            this.menu.close();
-        });
-        return b;
-    }
-
-    _updateTop() {
-        const top = this._snap.top;
-        this._topSection.removeAll();
-        if (!top)
-            return;
-        const item = new PopupMenu.PopupSubMenuMenuItem(
-            top.ram.slice(0, 3).map(a => `${a.name} ${F.bytes(a.ram)}`).join(' · '));
-        item.label.add_style_class_name('pulso-dim');
-        const add = (title, list, fmt) => {
-            item.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(title));
-            for (const a of list) {
-                const row = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
-                row.add_child(new St.Label({text: a.count > 1 ? `${a.name}  (${a.count})` : a.name, x_expand: true}));
-                row.add_child(new St.Label({text: fmt(a), style_class: 'pulso-num'}));
-                item.menu.addMenuItem(row);
-            }
-        };
-        add('Memoria', top.ram, a => F.bytes(a.ram));
-        if (top.cpu.length)
-            add('CPU', top.cpu, a => F.pct(a.cpu, 1));
-        this._topSection.addMenuItem(item);
+    _updateHistory() {
+        const span = SPANS[this._settings.get_string('history-span')] ? this._settings.get_string('history-span') : 'day';
+        for (const [id, b] of Object.entries(this._spanButtons))
+            b[id === span ? 'add_style_class_name' : 'remove_style_class_name']('pulso-span-active');
+        const points = this._state.history?.[span] ?? [];
+        this._chart.setData(points, SPANS[span][0]);
+        this._chartLegend.text = U.chartLegend(points);
     }
 
     _updateFooter() {
@@ -392,61 +348,60 @@ class PulsoIndicator extends PanelMenu.Button {
         if (!s)
             return;
         const t = GLib.DateTime.new_from_unix_local(Math.floor(s.time)).format('%H:%M:%S');
-        this._status.label.text = `${s.processCount ?? '—'} procesos · encendido ${F.duration(s.uptime)} · ${t}`;
+        this._status.text = `${s.processCount ?? '—'} procesos · encendido ${F.duration(s.uptime)} · ${t}`;
     }
 
-    // ------------------------------------------------------------ acciones y avisos
+    // ------------------------------------------------------------ acciones
 
-    _run(actions, what) {
-        const id = `${Date.now()}`;
-        this._pending ??= new Map();
-        this._pending.set(id, what);
+    _run(actions, label) {
+        if (!actions.length)
+            return;
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        this._pending.set(id, label);
         this._backend?.send({cmd: 'action', id, actions});
     }
 
     _onResult(r) {
-        const what = this._pending?.get(r.id);
-        this._pending?.delete(r.id);
+        const label = this._pending.get(r.id);
+        this._pending.delete(r.id);
         if (!r.ok)
-            Main.notifyError('Pulso', `${what ?? ''}: ${r.message}`);
+            this._notify(`No se pudo: ${label ?? 'acción'}`, r.message, true);
+        else if (r.message && label)
+            this._notify(r.message, '');
+    }
+
+    /** Notificación con el nombre e icono de Pulso (Main.notify las firma como «Sistema»). */
+    _notify(title, body, urgent = false) {
+        if (!this._source) {
+            this._source = new MessageTray.Source({title: 'Pulso', iconName: 'utilities-system-monitor-symbolic'});
+            this._source.connect('destroy', () => {
+                this._source = null;
+            });
+            Main.messageTray.add(this._source);
+        }
+        const n = new MessageTray.Notification({source: this._source, title, body,
+            urgency: urgent ? MessageTray.Urgency.HIGH : MessageTray.Urgency.NORMAL});
+        this._source.addNotification(n);
     }
 
     _openUri(uri) {
         try {
             Gio.AppInfo.launch_default_for_uri(uri, global.create_app_launch_context(0, -1));
         } catch (e) {
-            Main.notifyError('Pulso', `No se pudo abrir ${uri}: ${e.message}`);
+            this._notify(`No se pudo abrir ${uri}`, e.message, true);
         }
         this.menu.close();
     }
 
-    _checkAlerts() {
-        if (!this._settings.get_boolean('alerts'))
-            return;
-        const s = this._snap;
-        const alert = (key, on, title, body) => {
-            // Avisa al entrar en el estado y no repite hasta que se haya resuelto
-            if (on && !this._alerted[key])
-                Main.notify(title, body);
-            this._alerted[key] = on;
-        };
-        for (const d of s.disks) {
-            alert(`disk:${d.mount}`, F.diskSeverity(d.free, d.total) === 'critical', 'Queda poco disco',
-                `${F.shortPath(d.mount)}: ${F.bytes(d.free)} libres de ${F.bytes(d.total)}`);
-        }
-        alert('memory', s.memory.pressure === 'critical', 'Presión de memoria crítica',
-            `${F.bytes(s.memory.available)} disponibles · swap ${F.bytes(s.memory.swapUsed)}`);
-    }
-
     destroy() {
+        this._source?.destroy();
+        this._source = null;
         this._backend?.destroy();
         this._backend = null;
         this._settings = null;
         super.destroy();
     }
 });
-
-// ---------------------------------------------------------------- extensión
 
 export default class PulsoExtension extends Extension {
     enable() {

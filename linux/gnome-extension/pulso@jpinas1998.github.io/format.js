@@ -26,6 +26,28 @@ export function duration(seconds) {
     return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
 }
 
+/** «hace 3 min», «hace 2 h», «hace 5 días» (epoch en segundos) */
+export function ago(epoch) {
+    if (!epoch)
+        return '—';
+    const s = Math.max(0, Date.now() / 1000 - epoch);
+    if (s < 60)
+        return 'hace un momento';
+    if (s < 3600)
+        return `hace ${Math.floor(s / 60)} min`;
+    if (s < 86400)
+        return `hace ${Math.floor(s / 3600)} h`;
+    const d = Math.floor(s / 86400);
+    return d === 1 ? 'ayer' : d < 60 ? `hace ${d} días` : `hace ${Math.floor(d / 30)} meses`;
+}
+
+/** Hora (o día y hora si no es hoy) de un epoch en segundos */
+export function clock(epoch) {
+    const t = GLib.DateTime.new_from_unix_local(Math.floor(epoch));
+    const today = GLib.DateTime.new_now_local();
+    return t.format(t.get_day_of_year() === today.get_day_of_year() && t.get_year() === today.get_year() ? '%H:%M' : '%d/%m %H:%M');
+}
+
 export function shortPath(p) {
     return p.startsWith(HOME) ? `~${p.slice(HOME.length)}` : p;
 }

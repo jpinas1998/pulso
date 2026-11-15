@@ -1,9 +1,9 @@
 {
   "uuid": "pulso@jpinas1998.github.io",
   "name": "Pulso",
-  "description": "Monitor de desarrollo en la barra superior: CPU, memoria, disco, batería y servidores agrupados por proyecto (puertos, Docker, servicios de systemd), con opción de cerrarlos.",
+  "description": "Monitor para desarrollar: CPU, memoria, disco, batería e historial; servidores agrupados por proyecto (puertos, Docker, systemd) con cerrar, reiniciar y perfiles de arranque; limpieza de espacio, worktrees y avisos.",
   "shell-version": ["48", "49", "50"],
   "settings-schema": "org.gnome.shell.extensions.pulso",
-  "url": "https://github.com/jpinas1998/widget-mac",
-  "version-name": "0.1.0"
+  "url": "https://github.com/jpinas1998/pulso",
+  "version-name": "0.2.0"
 }

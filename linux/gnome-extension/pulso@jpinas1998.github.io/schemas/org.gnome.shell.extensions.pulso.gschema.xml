@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Valores por defecto: los mismos que mac/Pulso/Services/Prefs.swift -->
 <schemalist>
   <schema id="org.gnome.shell.extensions.pulso" path="/org/gnome/shell/extensions/pulso/">
+    <!-- General -->
     <key name="toggle-panel" type="as">
       <default><![CDATA[['<Super><Alt>p']]]></default>
       <summary>Atajo para abrir el panel</summary>
@@ -13,9 +15,50 @@
       <default>true</default>
       <summary>Mostrar la memoria junto a la CPU en la barra</summary>
     </key>
-    <key name="alerts" type="b">
-      <default>true</default>
-      <summary>Avisar de disco bajo y presión de memoria</summary>
+    <key name="panel-tab" type="s">
+      <default>'servers'</default>
+      <summary>Pestaña abierta del panel</summary>
     </key>
+    <key name="history-span" type="s">
+      <default>'day'</default>
+      <summary>Rango de la gráfica (day, week, month)</summary>
+    </key>
+    <key name="health-checks" type="b">
+      <default>true</default>
+      <summary>Comprobar si responden los servidores HTTP (con el panel abierto, una vez por minuto)</summary>
+    </key>
+    <key name="show-udp" type="b">
+      <default>false</default>
+      <summary>Mostrar también los puertos UDP</summary>
+    </key>
+    <key name="project-roots" type="as">
+      <default>[]</default>
+      <summary>Carpetas de proyectos (vacío: ~/projects, ~/Documents/projects, ~/dev, ~/src, ~/code)</summary>
+    </key>
+
+    <!-- Avisos -->
+    <key name="alert-cpu" type="b"><default>true</default><summary>Avisar de CPU sostenida</summary></key>
+    <key name="alert-cpu-percent" type="i"><range min="50" max="100"/><default>90</default><summary>Umbral de CPU (%)</summary></key>
+    <key name="alert-cpu-minutes" type="i"><range min="1" max="60"/><default>5</default><summary>Minutos seguidos por encima</summary></key>
+    <key name="alert-pressure" type="b"><default>true</default><summary>Avisar de presión de memoria crítica</summary></key>
+    <key name="alert-swap" type="b"><default>true</default><summary>Avisar de swap alto</summary></key>
+    <key name="alert-swap-gb" type="i"><range min="1" max="128"/><default>6</default><summary>Swap (GB)</summary></key>
+    <key name="alert-disk" type="b"><default>true</default><summary>Avisar de poco disco</summary></key>
+    <key name="alert-disk-gb" type="i"><range min="1" max="1000"/><default>15</default><summary>Disco libre mínimo (GB)</summary></key>
+    <key name="alert-server-down" type="b"><default>true</default><summary>Avisar si se detiene un servidor</summary></key>
+    <key name="alert-new-port" type="b"><default>false</default><summary>Avisar de puertos nuevos</summary></key>
+    <key name="alert-idle-projects" type="b"><default>true</default><summary>Avisar de proyectos sin usar</summary></key>
+    <key name="idle-project-minutes" type="i"><range min="5" max="1440"/><default>60</default><summary>Minutos sin CPU para «sin usar»</summary></key>
+    <key name="alert-long-tasks" type="b"><default>true</default><summary>Avisar cuando termina un comando largo de la terminal</summary></key>
+    <key name="long-task-minutes" type="i"><range min="1" max="120"/><default>2</default><summary>Duración mínima (min)</summary></key>
+    <key name="alert-cleanup" type="b"><default>true</default><summary>Avisar al terminar mediciones y limpiezas</summary></key>
+
+    <!-- Limpieza -->
+    <key name="auto-measure" type="b"><default>true</default><summary>Medir automáticamente cuánto se puede liberar</summary></key>
+    <key name="measure-every-hours" type="i"><range min="1" max="168"/><default>6</default><summary>Cada cuántas horas</summary></key>
+    <key name="idle-avg-cpu" type="i"><range min="5" max="90"/><default>30</default><summary>CPU media máxima (10 min) para considerarlo tranquilo (%)</summary></key>
+    <key name="idle-now-cpu" type="i"><range min="5" max="95"/><default>40</default><summary>CPU actual máxima para considerarlo tranquilo (%)</summary></key>
+    <key name="retry-minutes" type="i"><range min="1" max="240"/><default>10</default><summary>Reintentar tras aplazar (min)</summary></key>
+    <key name="abort-cpu" type="i"><range min="20" max="100"/><default>80</default><summary>Cancelar una tarea automática si la CPU pasa de (%)</summary></key>
   </schema>
 </schemalist>
